@@ -2,6 +2,8 @@
 
 Use this when you want to turn a manual browsing session into durable artifacts.
 
+This workflow is also useful for API discovery. The recorded browser clicks are evidence for understanding what backend interfaces were triggered and what secondary development may be needed.
+
 ## Start Engine
 
 ```bash
@@ -44,6 +46,21 @@ Open:
 logs/browser-intelligence/traces/demo-task/review.md
 ```
 
+Use the review to decide whether the workflow should become:
+
+- API-first backend adapter
+- UI-first Browser Engine pipeline
+- Hybrid browser + API workflow
+- Browser Intelligence extractor
+- Site profile
+- Manual-assisted task template
+
+If API candidates are found, create an API discovery brief:
+
+```text
+examples/api-discovery-brief.md
+```
+
 ## Extract
 
 ```bash
@@ -63,5 +80,7 @@ If this task repeats often, consider adding:
 
 - Site profile
 - Extractor parser
+- Backend/API adapter
+- Browser Engine pipeline
 - Task template
 - Example documentation

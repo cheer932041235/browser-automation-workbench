@@ -131,6 +131,17 @@ The review report summarizes:
 - Selectors and interaction clues
 - Recommended automation strategy
 
+At this point, the recorded browser flow becomes a development artifact. If the review finds stable API candidates, the next step is usually not to replay the same clicks forever, but to validate the backend interface and wrap it in secondary development.
+
+Typical follow-up:
+
+- Inspect `review.md` and `network.json`.
+- Confirm request method, parameters, headers, and response schema.
+- Decide whether the final implementation should be API-first, UI-first, or hybrid.
+- Build a backend adapter, CLI script, extractor, site profile, or Browser Engine pipeline.
+
+See [UI Recording to API Discovery](api-discovery.md).
+
 ## Extract Structured Content
 
 ```bash

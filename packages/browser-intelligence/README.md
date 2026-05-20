@@ -5,7 +5,7 @@ Browser Intelligence is the workflow and analysis layer of Browser Automation Wo
 It turns one browser session into reusable artifacts:
 
 ```text
-record → review → extract
+record → review → extract / API discovery brief
 ```
 
 ## Positioning
@@ -16,8 +16,11 @@ It relies on Browser Engine for real browser operations and focuses on:
 
 - Capturing browsing evidence
 - Reviewing automation strategy
+- Turning frontend click paths into backend/API discovery evidence
 - Extracting structured content
 - Producing reports that can be reused later
+
+The recorded click sequence is not always the final automation target. In many cases, it is the observation layer used to discover backend interfaces, request parameters, authentication context, response schema, and the safest secondary development path.
 
 ## Commands
 
@@ -80,6 +83,7 @@ logs/browser-intelligence/traces/<taskId>/
 - Browser Engine health and tab proxy
 - Recorder: start, mark, status, stop
 - Reviewer: timeline, navigation, network classification, API candidates, selectors, recommendation
+- API discovery: evidence for backend adapters, CLI scripts, extractors, site profiles, or hybrid automation
 - Extractor: generic extraction and XHS validation parser
 - Multi-post extraction for feed/search style pages
 - Content quality score, category, timeliness, and location relevance enrichment
@@ -111,3 +115,4 @@ BI_LOGS_DIR         Runtime output directory, default ../../logs/browser-intelli
 - Add reviewer heuristics when trace analysis reveals stable new patterns
 - Add task templates for repeated workflows
 - Add site profiles in Browser Engine for repeated selector/API knowledge
+- Add backend/API adapters after repeated traces validate a stable interface
