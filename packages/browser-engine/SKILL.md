@@ -464,7 +464,7 @@ POST /accessibility/click  body: {"refId":"@e3"}
 POST /pipeline  body: {
   "steps": [
     {"action":"fill","selector":"#username","value":"admin"},
-    {"action":"fill","selector":"#password","value":"secret"},
+    {"action":"fill","selector":"#password","value":"example-password"},
     {"action":"click","selector":"#login-btn"},
     {"action":"wait","ms":2000},
     {"action":"extract","selector":".welcome","property":"textContent"}
