@@ -4,6 +4,8 @@ Browser Intelligence is the workflow layer on top of Browser Engine.
 
 It records, reviews, and extracts browsing sessions. It is useful when a browser task should become a reusable asset rather than a one-off operation.
 
+It is also an API discovery layer. A recorded frontend click path is often used to discover the backend interfaces, parameters, authentication context, and response schema needed for later secondary development.
+
 ## Commands
 
 ```bash
@@ -58,6 +60,30 @@ It analyzes:
 - Stable selectors
 - Strategy recommendation: API-first, UI-first, hybrid, or manual-assisted
 
+## API Discovery and Secondary Development
+
+Recorder and Reviewer do not automatically turn every click flow into a finished backend integration.
+
+Their role is to produce a development brief:
+
+```text
+frontend click path
+  → captured network metadata
+  → API candidates and selectors
+  → strategy recommendation
+  → developer validates and wraps stable behavior
+```
+
+Typical follow-up work:
+
+- Validate candidate endpoints with controlled calls.
+- Confirm request method, parameters, headers, and response schema.
+- Decide how authentication should be handled safely.
+- Implement a backend adapter, CLI script, extractor, site profile, or Browser Engine pipeline.
+- Add synthetic tests before reusing the workflow.
+
+This distinction is important: Browser Intelligence records evidence and recommends direction; reusable automation still requires deliberate secondary development.
+
 ## Extractor
 
 ```bash
@@ -83,6 +109,8 @@ Current extractor capabilities:
 - Hangzhou relevance scoring
 
 XHS is a validation scenario, not the strategic center of the project. The strategic center is the reusable browser workflow pipeline.
+
+For more details, see [UI Recording to API Discovery](api-discovery.md).
 
 ## Output Policy
 

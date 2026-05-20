@@ -13,6 +13,7 @@ Browser Intelligence  = 分析层 / 大脑
 
 - **Browser Engine**：通过 Chrome DevTools Protocol 连接用户日常 Edge/Chrome，提供点击、输入、截图、网络、Cookie、Storage、任务持久化等 HTTP API。
 - **Browser Intelligence**：基于 Engine 录制一次浏览过程，并把 trace、网络请求、页面结构和文本内容转成可复盘、可提取、可复用的任务资产。
+- **API Discovery / 二次开发准备**：很多“前端点击”本质上是在触发后端接口。录制的目的不是停留在复刻鼠标动作，而是帮助开发者识别接口、参数、认证上下文和可封装的自动化入口。
 
 ## 当前能力
 
@@ -30,6 +31,7 @@ Browser Intelligence  = 分析层 / 大脑
 
 - `record`：录制人类浏览过程，输出 trace、页面文本、网络请求、截图和摘要
 - `review`：分析 trace，识别 API 候选、稳定选择器、导航路径和自动化策略
+- `API discovery`：把一次前端操作路径转化为后续后端接口封装、脚本开发或 extractor 开发的证据
 - `extract`：从 trace 提取结构化内容，当前已验证小红书与通用页面
 - 输出目录隔离，适合长期积累浏览任务资产
 
@@ -45,6 +47,7 @@ browser-automation-workbench/
 │   ├── browser-engine.md
 │   ├── browser-intelligence.md
 │   ├── workflows.md
+│   ├── api-discovery.md
 │   ├── safety.md
 │   └── roadmap.md
 ├── packages/
@@ -103,6 +106,7 @@ npm run bi -- extract demo
 - **人在回路**：不把账号登录、验证码、风控绕过做成无人值守自动化
 - **最小侵入**：新建托管 tab，尽量不干扰用户已有页面
 - **可复盘**：每次重要浏览都能生成 trace、review、extract
+- **面向二次开发**：录制结果用于发现后端接口和业务状态，不承诺一键生成生产级集成
 - **可扩展**：后续新增站点 profile、任务模板、extractor、pipeline，而不是重写底层 CDP
 
 ## 文档入口
@@ -112,6 +116,7 @@ npm run bi -- extract demo
 - [Browser Engine 说明](docs/browser-engine.md)
 - [Browser Intelligence 说明](docs/browser-intelligence.md)
 - [常见工作流](docs/workflows.md)
+- [UI 录制到 API 发现](docs/api-discovery.md)
 - [安全边界](docs/safety.md)
 - [路线图](docs/roadmap.md)
 

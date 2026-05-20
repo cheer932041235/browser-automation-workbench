@@ -8,7 +8,8 @@ User / Agent
    ├── Browser Intelligence CLI
    │      ├── record: capture a human browsing session
    │      ├── review: analyze traces and recommend automation strategy
-   │      └── extract: extract structured content from traces
+   │      ├── extract: extract structured content from traces
+   │      └── api discovery: turn frontend actions into backend integration evidence
    │
    └── Browser Engine HTTP API
           ├── CDP connection
@@ -51,6 +52,7 @@ Responsibilities:
 - Record a browsing task into trace files
 - Capture page text, network metadata, screenshots, navigation history, and notes
 - Review traces to identify API candidates, stable selectors, and automation strategy
+- Explain whether a frontend click path should become API-first, UI-first, or hybrid secondary development
 - Extract structured content from saved traces
 - Produce human-readable reports and machine-readable JSON
 
@@ -75,6 +77,11 @@ review
   → classifies requests
   → identifies API candidates and selectors
   → writes review.md
+
+secondary development
+  → validates candidate backend interfaces
+  → confirms parameters, auth context, response schema, and error handling
+  → wraps stable behavior into an adapter, CLI, extractor, site profile, or pipeline
 
 extract
   → reads pages.json + network.json
@@ -113,7 +120,10 @@ Future browser automation features should usually fit into one of these extensio
 - **Reviewer analyzer**: add a new heuristic for API/selector/workflow analysis
 - **Extractor parser**: add a new platform/content parser
 - **Task template**: add reusable workflow instructions for a recurring use case
+- **Backend/API adapter**: wrap a repeatedly validated browser-discovered interface
 
 ## Design Principle
 
 Do not prematurely make every site a product feature. First record and analyze real browsing sessions. Promote repeated patterns into profiles, extractors, or engine endpoints only after they prove useful.
+
+The recorded UI path is often only the first layer. Its deeper value is to reveal the backend interfaces and browser state behind the visible page, so later development can replace brittle click replay with safer API or hybrid integrations when appropriate.

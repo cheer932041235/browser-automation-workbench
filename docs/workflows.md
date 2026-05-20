@@ -78,6 +78,17 @@ Recommended evidence:
 
 ## Workflow 5: API-first Automation Discovery
 
+This is the workflow that turns a visible frontend operation into backend/API development evidence.
+
+The browser click path is not the final product. It is a controlled probe:
+
+```text
+click/search/navigate in browser
+  → capture network requests and page state
+  → identify candidate backend interfaces
+  → validate and wrap the stable interface in secondary development
+```
+
 1. Start recording.
 2. Enable network monitoring through Recorder or Engine.
 3. Perform the user action once manually.
@@ -87,6 +98,13 @@ Recommended evidence:
 7. If API response body is required, use Engine's `/network/response` while the target page is still alive.
 
 Use API-first only when it is stable, authenticated by existing browser session, and safer than brittle UI clicks.
+
+The output of this workflow is usually not a finished automation feature. It is a development brief for the next layer:
+
+- Confirm the request method, URL, parameters, headers, and response schema.
+- Decide how authentication should be handled without exposing credentials.
+- Implement a backend adapter, CLI script, extractor, site profile, or Browser Engine pipeline.
+- Add tests with synthetic fixtures before treating the integration as reusable.
 
 ## Workflow 6: UI-first Automation
 
@@ -110,6 +128,7 @@ Use hybrid when:
 - UI is needed to reach a valid page state
 - API calls become visible after user interaction
 - Content is partly rendered and partly delivered through network responses
+- The user must first perform judgment or confirmation, then developers can wrap the discovered interface
 
 Typical sequence:
 
