@@ -1,0 +1,25 @@
+{
+  "name": "browser-automation-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A local-first browser automation workbench built on CDP, with an execution engine and an intelligence layer for recording, reviewing, and extracting browsing workflows.",
+  "workspaces": [
+    "packages/browser-engine",
+    "packages/browser-intelligence"
+  ],
+  "scripts": {
+    "engine:start": "node packages/browser-engine/start.mjs",
+    "engine:server": "node packages/browser-engine/server.mjs",
+    "engine:cli": "node packages/browser-engine/be.mjs",
+    "bi": "node packages/browser-intelligence/scripts/bi.mjs",
+    "check": "npm run check:engine && npm run check:intelligence",
+    "check:engine": "node --check packages/browser-engine/accessibility.mjs && node --check packages/browser-engine/autoshot.mjs && node --check packages/browser-engine/batch.mjs && node --check packages/browser-engine/be.mjs && node --check packages/browser-engine/core.mjs && node --check packages/browser-engine/detect.mjs && node --check packages/browser-engine/dialog.mjs && node --check packages/browser-engine/frames.mjs && node --check packages/browser-engine/interact.mjs && node --check packages/browser-engine/navigation.mjs && node --check packages/browser-engine/network.mjs && node --check packages/browser-engine/page.mjs && node --check packages/browser-engine/pipeline.mjs && node --check packages/browser-engine/profiles.mjs && node --check packages/browser-engine/server.mjs && node --check packages/browser-engine/start.mjs && node --check packages/browser-engine/stealth.mjs && node --check packages/browser-engine/tabs.mjs && node --check packages/browser-engine/tasks.mjs && node --check packages/browser-engine/wait.mjs",
+    "check:intelligence": "npm --prefix packages/browser-intelligence run check",
+    "test": "npm run test:intelligence",
+    "test:intelligence": "npm --prefix packages/browser-intelligence test"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

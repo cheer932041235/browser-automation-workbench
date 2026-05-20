@@ -1,0 +1,14 @@
+{
+  "name": "browser-engine",
+  "version": "1.0.0",
+  "description": "增强版浏览器自动化引擎 - 通过 CDP 连接用户日常浏览器，提供完整的自动化能力",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

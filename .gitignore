@@ -1,0 +1,24 @@
+# Runtime output
+logs/
+*.log
+*.err
+
+# Browser Engine runtime state
+packages/browser-engine/.tasks/
+packages/browser-engine/.site-profiles/
+
+# Node/npm
+node_modules/
+.npm/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temporary outputs
+.tmp/
+tmp/
+.cache/
+coverage/

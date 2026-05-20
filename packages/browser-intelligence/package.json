@@ -1,0 +1,10 @@
+{
+  "name": "browser-intelligence",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test ./tests/*.test.mjs",
+    "check": "node --check ./scripts/bi.mjs && node --check ./scripts/lib/engine-client.mjs && node --check ./scripts/lib/format.mjs && node --check ./scripts/lib/paths.mjs && node --check ./scripts/lib/recorder.mjs && node --check ./scripts/lib/reviewer.mjs && node --check ./scripts/lib/extractor.mjs"
+  }
+}
