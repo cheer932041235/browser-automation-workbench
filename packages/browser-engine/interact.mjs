@@ -8,16 +8,72 @@ export class Interactor {
 
   // --- 执行 JS ---
   async eval(targetId, expression, opts = {}) {
-    const resp = await this.cdp.sendToTarget(targetId, 'Runtime.evaluate', {
+    const params = {
       expression,
       returnByValue: true,
       awaitPromise: opts.awaitPromise !== false,
       timeout: opts.timeout || 30000,
-    });
+    };
+    if (opts.userGesture) params.userGesture = true;
+    const resp = await this.cdp.sendToTarget(targetId, 'Runtime.evaluate', params);
     if (resp.result?.exceptionDetails) {
       return { error: resp.result.exceptionDetails.text || resp.result.exceptionDetails.exception?.description };
     }
     return { value: resp.result?.result?.value };
+  }
+
+  // --- 剪贴板写入（授权 + userGesture） ---
+  async clipboardWrite(targetId, text) {
+    // 0. 确保标签页在前台（clipboard API 需要 document focused）
+    await this.cdp.sendToTarget(targetId, 'Page.bringToFront', {});
+    // 1. 获取页面 origin 用于权限授权
+    const originResp = await this.eval(targetId, 'location.origin');
+    const origin = originResp.value || '';
+
+    // 2. 授予 clipboard 权限（Browser domain，不需要 session）
+    try {
+      await this.cdp.send('Browser.grantPermissions', {
+        permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'],
+        origin,
+      });
+    } catch (e) {
+      // 部分浏览器版本不支持此方法，忽略继续尝试
+    }
+
+    // 3. 用 userGesture=true 写入剪贴板
+    const writeResp = await this.cdp.sendToTarget(targetId, 'Runtime.evaluate', {
+      expression: `navigator.clipboard.writeText(${JSON.stringify(text)}).then(() => 'ok').catch(e => 'err: ' + e.message)`,
+      returnByValue: true,
+      awaitPromise: true,
+      userGesture: true,
+    });
+    const result = writeResp.result?.result?.value;
+    if (result === 'ok') {
+      return { written: true, length: text.length };
+    }
+    return { error: result || 'clipboard write failed', written: false };
+  }
+
+  // --- 剪贴板读取 ---
+  async clipboardRead(targetId) {
+    await this.cdp.sendToTarget(targetId, 'Page.bringToFront', {});
+    const originResp = await this.eval(targetId, 'location.origin');
+    const origin = originResp.value || '';
+    try {
+      await this.cdp.send('Browser.grantPermissions', {
+        permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'],
+        origin,
+      });
+    } catch {}
+    const readResp = await this.cdp.sendToTarget(targetId, 'Runtime.evaluate', {
+      expression: `navigator.clipboard.readText().then(t => t).catch(e => '__ERR__' + e.message)`,
+      returnByValue: true,
+      awaitPromise: true,
+      userGesture: true,
+    });
+    const val = readResp.result?.result?.value;
+    if (val && val.startsWith('__ERR__')) return { error: val.slice(7) };
+    return { text: val, length: val?.length || 0 };
   }
 
   // --- JS 层点击 ---
@@ -210,14 +266,80 @@ export class Interactor {
     return { pressed: key };
   }
 
+  // --- 将 tab 带到前台 ---
+  async bringToFront(targetId) {
+    await this.cdp.sendToTarget(targetId, 'Page.bringToFront', {});
+    return { activated: true };
+  }
+
+  // --- 粘贴（使用 commands 参数触发浏览器原生粘贴） ---
+  async paste(targetId) {
+    // 先激活到前台
+    await this.cdp.sendToTarget(targetId, 'Page.bringToFront', {});
+    // 使用 commands 参数（Chrome 62+）
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchKeyEvent', {
+      type: 'rawKeyDown',
+      key: 'v',
+      code: 'KeyV',
+      windowsVirtualKeyCode: 86,
+      nativeVirtualKeyCode: 86,
+      modifiers: 2, // Ctrl
+      commands: ['paste'],
+    });
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'v',
+      code: 'KeyV',
+      windowsVirtualKeyCode: 86,
+      nativeVirtualKeyCode: 86,
+      modifiers: 2,
+    });
+    return { pasted: true };
+  }
+
+  // --- 复制（使用 commands 参数触发浏览器原生复制） ---
+  async copy(targetId) {
+    await this.cdp.sendToTarget(targetId, 'Page.bringToFront', {});
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchKeyEvent', {
+      type: 'rawKeyDown',
+      key: 'c',
+      code: 'KeyC',
+      windowsVirtualKeyCode: 67,
+      nativeVirtualKeyCode: 67,
+      modifiers: 2,
+      commands: ['copy'],
+    });
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'c',
+      code: 'KeyC',
+      windowsVirtualKeyCode: 67,
+      nativeVirtualKeyCode: 67,
+      modifiers: 2,
+    });
+    return { copied: true };
+  }
+
   // --- 键盘快捷键组合 ---
   async hotkey(targetId, ...keys) {
+    const modifierMask = (heldKeys) => {
+      let mod = 0;
+      if (heldKeys.has('Alt')) mod |= 1;
+      if (heldKeys.has('Control')) mod |= 2;
+      if (heldKeys.has('Meta')) mod |= 4;
+      if (heldKeys.has('Shift')) mod |= 8;
+      return mod;
+    };
+    const held = new Set();
     // 按下所有键
     for (const key of keys) {
       const keyDef = KEY_DEFINITIONS[key] || { key, code: key, keyCode: 0 };
+      const isModifier = ['Alt', 'Control', 'Meta', 'Shift'].includes(key);
+      if (isModifier) held.add(key);
       await this.cdp.sendToTarget(targetId, 'Input.dispatchKeyEvent', {
         type: 'keyDown', key: keyDef.key, code: keyDef.code,
         windowsVirtualKeyCode: keyDef.keyCode, nativeVirtualKeyCode: keyDef.keyCode,
+        modifiers: modifierMask(held),
       });
     }
     // 释放所有键（逆序，不修改原数组）
@@ -226,7 +348,9 @@ export class Interactor {
       await this.cdp.sendToTarget(targetId, 'Input.dispatchKeyEvent', {
         type: 'keyUp', key: keyDef.key, code: keyDef.code,
         windowsVirtualKeyCode: keyDef.keyCode, nativeVirtualKeyCode: keyDef.keyCode,
+        modifiers: modifierMask(held),
       });
+      held.delete(key);
     }
     return { hotkey: keys.join('+') };
   }

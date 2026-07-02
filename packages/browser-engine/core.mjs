@@ -72,7 +72,8 @@ export class CDPConnection {
         const port = parseInt(lines[0]);
         if (port > 0 && port < 65536 && await this.checkPort(port)) {
           const wsPath = lines[1] || null;
-          if (wsPath && await this.checkWebSocket(`ws://127.0.0.1:${port}${wsPath}`)) {
+          if (wsPath) {
+            // 信任 DevToolsActivePort 文件（跳过 WebSocket 预检，连接时验证）
             console.log(`[Engine] 从 DevToolsActivePort 发现端口: ${port} (${p.includes('Edge') ? 'Edge' : 'Chrome'})`);
             return { port, wsPath };
           }
@@ -155,21 +156,18 @@ export class CDPConnection {
       this.wsPath = discovered.wsPath;
     }
 
-    // 获取 WebSocket URL
+    // 获取 WebSocket URL — 优先 HTTP 发现（最新），DevToolsActivePort 作备选
     let wsUrl;
-    if (this.wsPath) {
-      // DevToolsActivePort 提供了完整路径（Edge/Chrome 都适用）
-      wsUrl = `ws://127.0.0.1:${this.port}${this.wsPath}`;
-      console.log(`[Engine] 使用 DevToolsActivePort 路径连接`);
-    } else {
-      // 尝试 HTTP 发现（Chrome 支持，Edge 可能不支持）
-      try {
-        const versionInfo = await this.httpGet(`http://127.0.0.1:${this.port}/json/version`);
-        const info = JSON.parse(versionInfo);
-        wsUrl = info.webSocketDebuggerUrl;
-        console.log(`[Engine] 浏览器: ${info.Browser || 'unknown'}`);
-      } catch {
-        // HTTP 发现失败，尝试通用路径
+    try {
+      const versionInfo = await this.httpGet(`http://127.0.0.1:${this.port}/json/version`);
+      const info = JSON.parse(versionInfo);
+      wsUrl = info.webSocketDebuggerUrl;
+      console.log(`[Engine] 浏览器: ${info.Browser || 'unknown'}`);
+    } catch {
+      if (this.wsPath) {
+        wsUrl = `ws://127.0.0.1:${this.port}${this.wsPath}`;
+        console.log(`[Engine] HTTP 不可用，使用 DevToolsActivePort 路径`);
+      } else {
         wsUrl = `ws://127.0.0.1:${this.port}/devtools/browser`;
         console.log(`[Engine] HTTP 发现失败，尝试通用 WebSocket 路径`);
       }

@@ -158,7 +158,17 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const expr = body || q.expr;
       if (!expr) return err(res, '需要 JS 表达式');
-      return ok(res, await interact.eval(target, expr));
+      const opts = {};
+      if (q.userGesture === '1' || q.userGesture === 'true') opts.userGesture = true;
+      return ok(res, await interact.eval(target, expr, opts));
+    }
+    if (pathname === '/clipboard/write') {
+      const body = await readBody(req);
+      if (!body) return err(res, '需要写入的文本内容');
+      return ok(res, await interact.clipboardWrite(target, body));
+    }
+    if (pathname === '/clipboard/read') {
+      return ok(res, await interact.clipboardRead(target));
     }
     if (pathname === '/click') {
       const body = await readBody(req);
@@ -212,6 +222,12 @@ const server = http.createServer(async (req, res) => {
       const keys = body.keys || (q.keys ? q.keys.split('+') : null);
       if (!keys) return err(res, '需要 keys 数组');
       return ok(res, await interact.hotkey(target, ...keys));
+    }
+    if (pathname === '/paste') {
+      return ok(res, await interact.paste(target));
+    }
+    if (pathname === '/copy') {
+      return ok(res, await interact.copy(target));
     }
     if (pathname === '/hover') {
       const body = await readBody(req);
@@ -749,7 +765,7 @@ function err(res, msg) { res.statusCode = 400; res.end(JSON.stringify({ error: m
 const API_HELP = {
   system: ['GET /health', 'GET /help'],
   tabs: ['GET /tabs', 'GET|POST /tabs/new', 'GET /tabs/close', 'GET /tabs/closeAll', 'GET /tabs/closeGroup', 'POST /tabs/navigate', 'GET /tabs/back', 'GET /tabs/forward', 'GET /tabs/reload', 'GET /tabs/info'],
-  interact: ['POST /eval', 'POST /click', 'POST /clickByText', 'POST /clickAt', 'POST /clickXY', 'POST /doubleClick', 'POST /rightClick', 'POST /type', 'POST /insertText', 'POST /fill', 'POST /fillForm', 'POST /pressKey', 'POST /hotkey', 'POST /hover', 'POST /scroll', 'POST /select', 'POST /checkbox', 'POST /upload', 'POST /drag', 'POST /actionability', 'POST /safeClick'],
+  interact: ['POST /eval', 'POST /eval?userGesture=1', 'POST /clipboard/write', 'GET /clipboard/read', 'POST /click', 'POST /clickByText', 'POST /clickAt', 'POST /clickXY', 'POST /doubleClick', 'POST /rightClick', 'POST /type', 'POST /insertText', 'POST /fill', 'POST /fillForm', 'POST /pressKey', 'POST /hotkey', 'POST /hover', 'POST /scroll', 'POST /select', 'POST /checkbox', 'POST /upload', 'POST /drag', 'POST /actionability', 'POST /safeClick'],
   page: ['POST /page/elements', 'POST /page/text', 'POST /page/forms', 'POST /page/links', 'POST /page/table', 'POST /page/waitElement', 'POST /page/waitText', 'POST /page/waitNetwork', 'POST /screenshot', 'POST /pdf'],
   console: ['GET /console/enable', 'GET /console/logs', 'GET /console/clear', 'GET /console/stop'],
   shadow: ['POST /shadow/query', 'POST /shadow/click', 'POST /shadow/fill'],
