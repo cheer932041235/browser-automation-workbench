@@ -2,6 +2,7 @@
 logs/
 *.log
 *.err
+screenshots/
 
 # Browser Engine runtime state
 packages/browser-engine/.tasks/
