@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 662" font-family="'Segoe UI',system-ui,-apple-system,Helvetica,Arial,sans-serif">
+  <defs>
+    <marker id="ar" markerWidth="12" markerHeight="12" refX="7" refY="3.5" orient="auto"><path d="M0,0 L8,3.5 L0,7 Z" fill="#64748b"/></marker>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="998" height="660" rx="20" fill="#0f172a" stroke="#1e293b" stroke-width="2"/>
+
+  <text x="500" y="48" text-anchor="middle" font-size="30" font-weight="700" fill="#f1f5f9">Browser Automation Workbench</text>
+  <text x="500" y="76" text-anchor="middle" font-size="14.5" fill="#94a3b8">Local-first browser automation — an execution engine + an intelligence layer, built on CDP</text>
+
+  <!-- tools -->
+  <text x="500" y="112" text-anchor="middle" font-size="11" letter-spacing="2" fill="#64748b">YOUR AI TOOLS &amp; AGENTS</text>
+  <rect x="200" y="122" width="600" height="40" rx="20" fill="#172033" stroke="#334155" stroke-width="1.5"/>
+  <text x="500" y="147" text-anchor="middle" font-size="14.5" fill="#cbd5e1">Claude Code · Cline · Cursor · Codex · any OpenAI-compatible client</text>
+
+  <line x1="500" y1="162" x2="500" y2="192" stroke="#64748b" stroke-width="2" marker-end="url(#ar)"/>
+  <text x="512" y="182" font-size="12.5" fill="#94a3b8" font-family="'SF Mono',Consolas,monospace">HTTP API · OpenAI / Claude compatible</text>
+
+  <!-- workbench container -->
+  <rect x="118" y="200" width="764" height="252" rx="16" fill="#131c2e" stroke="#2b3a52" stroke-width="1.5"/>
+  <rect x="118" y="200" width="764" height="3" rx="1.5" fill="url(#glow)"/>
+  <text x="140" y="226" font-size="11" letter-spacing="2" fill="#64748b">THE WORKBENCH · TWO LAYERS</text>
+
+  <!-- Intelligence layer -->
+  <rect x="146" y="240" width="708" height="92" rx="12" fill="#1e293b" stroke="#3b2f5e" stroke-width="1.5"/>
+  <rect x="146" y="240" width="6" height="92" rx="3" fill="#a78bfa"/>
+  <text x="172" y="272" font-size="19" font-weight="700" fill="#c4b5fd">Browser Intelligence <tspan font-size="14" font-weight="400" fill="#8b8ca8">— the brain</tspan></text>
+  <text x="172" y="300" font-size="14" fill="#94a3b8">record a session  →  review &amp; recommend strategy  →  extract structured content</text>
+  <text x="172" y="320" font-size="14" fill="#94a3b8">API discovery: turn frontend actions into backend integration evidence</text>
+
+  <!-- Engine layer -->
+  <rect x="146" y="344" width="708" height="92" rx="12" fill="#1e293b" stroke="#1f4a55" stroke-width="1.5"/>
+  <rect x="146" y="344" width="6" height="92" rx="3" fill="#22d3ee"/>
+  <text x="172" y="376" font-size="19" font-weight="700" fill="#67e8f9">Browser Engine <tspan font-size="14" font-weight="400" fill="#8b8ca8">— the hands</tspan></text>
+  <text x="172" y="404" font-size="14" fill="#94a3b8">CDP connect · tabs · click / type / scroll · DOM &amp; forms · network capture</text>
+  <text x="172" y="424" font-size="14" fill="#94a3b8">cookies &amp; storage · screenshots · PDF · frames / shadow DOM — exposed as HTTP API + CLI</text>
+
+  <line x1="500" y1="452" x2="500" y2="484" stroke="#64748b" stroke-width="2" marker-end="url(#ar)"/>
+  <text x="512" y="474" font-size="12.5" fill="#94a3b8" font-family="'SF Mono',Consolas,monospace">Chrome DevTools Protocol (CDP)</text>
+
+  <!-- browser -->
+  <rect x="118" y="494" width="764" height="58" rx="14" fill="#0b1220" stroke="#334155" stroke-width="1.5"/>
+  <circle cx="146" cy="523" r="6" fill="#ff5f57"/><circle cx="166" cy="523" r="6" fill="#febc2e"/><circle cx="186" cy="523" r="6" fill="#28c840"/>
+  <text x="512" y="528" text-anchor="middle" font-size="15.5" font-weight="600" fill="#e2e8f0">Your everyday, already-logged-in  Edge / Chrome  —  real session, real cookies</text>
+
+  <line x1="500" y1="552" x2="500" y2="582" stroke="#64748b" stroke-width="2" marker-end="url(#ar)"/>
+
+  <!-- sites -->
+  <rect x="230" y="592" width="540" height="40" rx="20" fill="#172033" stroke="#334155" stroke-width="1.5"/>
+  <text x="500" y="617" text-anchor="middle" font-size="14" fill="#cbd5e1">Feishu · Xiaohongshu · internal dashboards · any logged-in website</text>
+</svg>
