@@ -1,6 +1,7 @@
 {
   "name": "browser-automation-workbench",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "description": "A local-first browser automation workbench built on CDP, with an execution engine and an intelligence layer for recording, reviewing, and extracting browsing workflows.",

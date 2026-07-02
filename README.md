@@ -6,6 +6,7 @@
 
 *Local-first browser automation: an execution engine + an intelligence layer, built on the Chrome DevTools Protocol.*
 
+[![License](https://img.shields.io/badge/license-MIT-4c8bf5?style=flat-square)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-3fb950?style=flat-square&logo=node.js&logoColor=white)](package.json)
 [![CDP](https://img.shields.io/badge/built%20on-Chrome%20DevTools%20Protocol-22d3ee?style=flat-square)](https://chromedevtools.github.io/devtools-protocol/)
 [![Tests](https://img.shields.io/badge/intelligence%20tests-76%20passing-3fb950?style=flat-square)](packages/browser-intelligence)
@@ -177,7 +178,7 @@ browser-automation-workbench/
 
 欢迎 Issue 与 PR —— 详见 [`CONTRIBUTING.md`](CONTRIBUTING.md) 与 [`SECURITY.md`](SECURITY.md)。
 
-> 📌 开源许可证即将补充（License TBD）。在正式添加之前，若你想复用本仓库代码，请先开 Issue 与作者沟通。
+本项目以 **MIT** 许可证开源，详见 [`LICENSE`](LICENSE) —— 欢迎自由使用、修改、二次开发与学习。
 
 <div align="center">
 <br/>
