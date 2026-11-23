@@ -30,8 +30,7 @@
     "test:appearance": "node scripts/verify-managed-appearance.mjs",
     "test:desktop": "node scripts/verify-desktop.mjs",
     "desktop:open": "node scripts/open-desktop.mjs",
-    "check:desktop": "node --check packages/browser-desktop/main.cjs && node --check packages/browser-desktop/preload.cjs && node --check packages/browser-desktop/shell.js && node --check packages/browser-engine/desktop-control.mjs && node --check scripts/open-desktop.mjs && node --check scripts/verify-desktop.mjs && node --check scripts/verify-engine.mjs && node --check scripts/verify-sessions.mjs && node --check scripts/verify-workbench.mjs && node --check scripts/verify-restart.mjs && node --check scripts/verify-background.mjs && node --check scripts/verify-managed-appearance.mjs && node --check scripts/verify-existing.mjs && node --check scripts/capture-docs.mjs",
-    "docs:screenshots": "node scripts/capture-docs.mjs"
+    "check:desktop": "node --check packages/browser-desktop/main.cjs && node --check packages/browser-desktop/preload.cjs && node --check packages/browser-desktop/shell.js && node --check packages/browser-engine/desktop-control.mjs && node --check scripts/open-desktop.mjs && node --check scripts/verify-desktop.mjs && node --check scripts/verify-engine.mjs && node --check scripts/verify-sessions.mjs && node --check scripts/verify-workbench.mjs && node --check scripts/verify-restart.mjs && node --check scripts/verify-background.mjs && node --check scripts/verify-managed-appearance.mjs && node --check scripts/verify-existing.mjs"
   },
   "engines": {
     "node": ">=22.0.0"

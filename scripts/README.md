@@ -26,7 +26,6 @@ Repository-level launch, desktop runtime, and real-browser acceptance scripts. T
 
 - `install-desktop-runtime.ps1`: Downloads/unpacks official Electron Windows x64 runtime into `runtime/desktop-runtime/` and creates root `我的浏览器.lnk` pointing to `打开我的浏览器.vbs`.
 - `install-agent-skill.ps1`: Copies the public skill into the selected skill directory and records the local repository location. Does not configure MCP or change other skills.
-- `capture-docs.mjs` / `npm run docs:screenshots`: Runs local demo tasks in two disposable desktop sessions and writes the management screenshot to `docs/images/`. Requires the installed Electron runtime; `--show` keeps the window open for a native window capture until Enter is pressed. The script removes its disposable profiles under `work/docs-screenshots/` on exit.
 - `start-workbench.mjs` / `open-desktop.mjs`: Starts `:3460` cleanly or opens the default `browser-home` desktop window.
 - `verify-engine.mjs`: Checks real page, cross-site iframe, and network isolation on controlled pages.
 - `verify-sessions.mjs`: Verifies dual-profile storage (`Cookie`, `localStorage`, `IndexedDB`) and download directory isolation.
