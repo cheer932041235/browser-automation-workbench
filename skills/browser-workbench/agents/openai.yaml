@@ -1,0 +1,4 @@
+interface:
+  display_name: "Browser Workbench"
+  short_description: "Run project browser sessions and resume saved tasks"
+  default_prompt: "Use $browser-workbench to operate the selected browser session or continue its saved task."

@@ -16,7 +16,7 @@ Repository-level launch, desktop runtime, and real-browser acceptance scripts. T
 | `npm run engine:cli` | Invoke Browser Engine CLI shortcuts (`packages/browser-engine/be.mjs`) |
 | `npm run bi` | Invoke Browser Intelligence CLI (`packages/browser-intelligence/scripts/bi.mjs`) |
 | `npm run check` | Syntax-check `browser-engine`, `browser-intelligence`, `browser-desktop`, and all `scripts/*.mjs` |
-| `npm test` | Run offline unit suites (Engine 35 tests + Intelligence 78 tests) |
+| `npm test` | Run offline unit suites (Engine 36 tests + Intelligence 78 tests) |
 | `npm run test:desktop` | Run 7 standalone desktop shell integration checks (`scripts/verify-desktop.mjs`) |
 | `npm run test:browser` | Run engine, profile isolation, workbench MCP/CLI, and restart-recovery checks |
 | `npm run test:background` | Run background-execution, human handoff, and login persistence checks (`scripts/verify-background.mjs`) |
@@ -25,6 +25,8 @@ Repository-level launch, desktop runtime, and real-browser acceptance scripts. T
 ## Script Inventory
 
 - `install-desktop-runtime.ps1`: Downloads/unpacks official Electron Windows x64 runtime into `runtime/desktop-runtime/` and creates root `我的浏览器.lnk` pointing to `打开我的浏览器.vbs`.
+- `install-agent-skill.ps1`: Copies the public skill into the selected skill directory and records the local repository location. Does not configure MCP or change other skills.
+- `capture-docs.mjs` / `npm run docs:screenshots`: Runs local demo tasks in two disposable desktop sessions and writes the management screenshot to `docs/images/`. Requires the installed Electron runtime; `--show` keeps the window open for a native window capture until Enter is pressed. The script removes its disposable profiles under `work/docs-screenshots/` on exit.
 - `start-workbench.mjs` / `open-desktop.mjs`: Starts `:3460` cleanly or opens the default `browser-home` desktop window.
 - `verify-engine.mjs`: Checks real page, cross-site iframe, and network isolation on controlled pages.
 - `verify-sessions.mjs`: Verifies dual-profile storage (`Cookie`, `localStorage`, `IndexedDB`) and download directory isolation.

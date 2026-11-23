@@ -8,6 +8,7 @@ import CDPConnection from '../packages/browser-engine/core.mjs';
 import TabManager from '../packages/browser-engine/tabs.mjs';
 import FrameManager from '../packages/browser-engine/frames.mjs';
 import NetworkManager from '../packages/browser-engine/network.mjs';
+import Interactor from '../packages/browser-engine/interact.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const profile = path.join(root, 'work/engine-acceptance/profile');
@@ -20,11 +21,11 @@ const fixture = http.createServer((req, res) => {
   if (req.url.startsWith('/api')) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ page: req.url })); return; }
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.end(req.url === '/inner' ? '<button id="nested" onclick="this.textContent=\'clicked\'">nested button</button>' :
-    `<title>Engine fixture</title><h1>Page ${req.url}</h1><div id="later"></div><script>setTimeout(()=>document.querySelector('#later').textContent='ready',100)</script><iframe src="${childOrigin}/frame"></iframe>`);
+    `<title>Engine fixture</title><h1>Page ${req.url}</h1><input id="input"><textarea id="note"></textarea><div id="later"></div><script>setTimeout(()=>document.querySelector('#later').textContent='ready',100)</script><iframe src="${childOrigin}/frame"></iframe>`);
 });
-const childFixture = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(`<button id="child" onclick="this.textContent='clicked'">frame button</button><iframe src="${origin}/inner"></iframe>`); });
+const childFixture = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html'); res.end(`<input id="input"><textarea id="note"></textarea><button id="child" onclick="this.textContent='clicked'">frame button</button><iframe src="${origin}/inner"></iframe>`); });
 await new Promise(resolve => fixture.listen(0, '127.0.0.1', resolve));
-await new Promise(resolve => childFixture.listen(0, 'localhost', resolve));
+await new Promise(resolve => childFixture.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${fixture.address().port}`;
 childOrigin = `http://localhost:${childFixture.address().port}`;
 const browser = spawn(process.env.BROWSER_EXE || 'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -57,6 +58,14 @@ try {
   const click = await frames.clickInFrame(a.targetId, child.frameId, '#child');
   assert.equal(click.value?.clicked, true);
   evidence.checks.push('cross-site iframe click');
+  const interact=new Interactor(cdp);
+  for(const selector of ['#input','#note']){
+    assert.equal((await interact.fill(a.targetId,selector,'main page note')).value.value,'main page note');
+    assert.equal((await frames.fillInFrame(a.targetId,child.frameId,selector,'iframe note')).value.value,'iframe note');
+  }
+  assert.equal((await interact.eval(a.targetId,"document.querySelector('#note').value")).value,'main page note');
+  assert.equal((await frames.evalInFrame(a.targetId,child.frameId,"document.querySelector('#note').value")).value,'iframe note');
+  evidence.checks.push('input and textarea fill on the main page and cross-site iframe');
   const nested=(await frames.listFrames(a.targetId)).find(f=>f.url===origin+'/inner');
   assert.ok(nested);assert.equal(nested.depth,2);
   assert.equal((await frames.clickInFrame(a.targetId,nested.frameId,'#nested')).value.clicked,true);

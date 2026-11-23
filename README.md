@@ -6,6 +6,18 @@
 
 **当前版本：0.6.0。** 独立桌面外壳及受管浏览器主要在 Windows x64 验证；核心离线测试也在 Linux CI 运行。macOS / Linux 的完整桌面安装与端到端流程尚未验证。
 
+## 界面预览
+
+独立会话、后台运行状态和任务进度集中显示；需要人工确认的步骤会停下来，已完成步骤保留结果。
+
+![两个独立会话与等待人工确认的可接续任务](docs/images/session-workbench.png)
+
+需要查看或处理页面时，打开对应的独立浏览器；处理完成后可以转回后台继续。
+
+![独立浏览器窗口内填写并保存资料笔记](docs/images/browser-window.png)
+
+以上截图来自仓库自带的本地演示：真实执行填写、保存和等待人工确认，不使用个人账号或业务数据。已安装桌面运行时后，运行 `npm run docs:screenshots` 生成会话管理截图；加上 `-- --show` 可打开演示窗口，使用系统窗口截图后按 Enter 结束。脚本退出时清理本次演示 Profile。
+
 ## 快速开始：Windows 独立浏览器
 
 准备 Node.js 22 或更高版本，以及 PowerShell。核心代码只使用 Node.js 内置模块，运行和测试不需要先安装 npm 依赖。
@@ -66,6 +78,23 @@ CLI 从标准输入读取 JSON，从标准输出返回 JSON。调用会按需启
 
 当前提供 23 项工具，覆盖会话、页面、iframe、截图、布局检查、下载和可接续任务。仅列出工具不会启动后台服务；实际工具调用才按需启动。账号与业务操作授权仍由调用任务决定。
 
+### Skill：给 AI 提供操作方法
+
+MCP 提供可调用的接口，skill 说明怎样选择会话、观察页面、执行任务和处理中断。也可以只安装 skill，通过 CLI 使用。
+
+仓库附带 [browser-workbench skill](skills/browser-workbench/SKILL.md)。Windows 用户在仓库根目录执行：
+
+```powershell
+./scripts/install-agent-skill.ps1
+
+# 或安装到客户端支持的其他技能目录
+./scripts/install-agent-skill.ps1 -Destination '/absolute/path/to/agent-skills/browser-workbench'
+```
+
+默认安装到 `~/.agents/skills/browser-workbench`，并写入仅保存在本机的仓库路径配置。重新加载支持该技能目录的 AI 客户端后，可以明确调用 `$browser-workbench`；其他客户端可选择自己的 skill 目录，或直接使用上面的 MCP 配置。更新仓库后，重新运行安装脚本以刷新 skill。
+
+安装脚本只复制配套 skill 并记录仓库位置；不会修改客户端的 MCP 配置或其他浏览器的技能。它也不会要求 AI 把所有网页任务都交给这个项目。
+
 ### 连接日常 Edge / Chrome
 
 在目标浏览器中启用远程调试；浏览器版本支持时可从 `edge://inspect/#remote-debugging` 或 `chrome://inspect/#remote-debugging` 进入。首次连接可能需要浏览器内确认。
@@ -93,6 +122,7 @@ npm run engine:cli -- --browser edge tabs
 | `packages/browser-engine/` | CDP 执行器、受管会话、任务和 MCP |
 | `packages/browser-intelligence/` | 录制、复盘、内容提取与 API 分析 |
 | `scripts/` | 启动、运行时安装和真实浏览器测试 |
+| `skills/browser-workbench/` | 可安装的 AI 操作指南 |
 | `docs/`、`examples/` | 使用说明和示例 |
 | `runtime/` | 本机浏览器程序、Profile、下载和任务状态，Git 忽略 |
 | `work/`、`outputs/` | 本机临时测试与结果，Git 忽略 |
@@ -121,6 +151,7 @@ npm run test:desktop
 ## 文档
 
 - [受管会话、MCP 与任务接续](docs/managed-workbench.md)
+- [AI 操作 skill](skills/browser-workbench/SKILL.md)
 - [独立桌面外壳](docs/desktop-shell.md)
 - [日常浏览器连接](docs/browser-connections.md)
 - [工作流示例](docs/workflows.md)

@@ -43,6 +43,7 @@ outputs/
 credentials.json
 cookies.json
 storage-state.json
+skills/**/workbench.json
 *.pem
 *.p12
 *.pfx

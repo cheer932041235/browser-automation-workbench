@@ -224,9 +224,7 @@ export class Interactor {
       el.scrollIntoView({ block: 'center', behavior: 'instant' });
       el.focus();
       const nativeSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype, 'value'
-      )?.set || Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype, 'value'
+        el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype, 'value'
       )?.set;
       if (nativeSetter) nativeSetter.call(el, ${JSON.stringify(value)});
       else el.value = ${JSON.stringify(value)};

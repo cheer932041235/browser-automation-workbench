@@ -31,7 +31,7 @@ if(process.argv.includes('--mcp')) {
   lines.on('line',async line=>{
     let req;
     try {
-      req=JSON.parse(line);if(req.id===undefined) return;
+      req=JSON.parse(line.trim());if(req.id===undefined) return;
       let result;
       if(req.method==='initialize') result={protocolVersion:['2024-11-05','2025-03-26','2025-06-18'].includes(req.params?.protocolVersion)?req.params.protocolVersion:'2025-06-18',capabilities:{tools:{}},serverInfo:{name:'browser-workbench',version:'0.6.0'}};
       else if(req.method==='ping') result={};

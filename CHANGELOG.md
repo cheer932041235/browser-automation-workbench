@@ -2,6 +2,9 @@
 
 ## 0.6.0 — 2026-11-23
 
+- Ship an installable browser-workbench agent skill with local repository discovery, plus illustrated setup documentation and a reproducible local screenshot demo.
+- Fix textarea filling on both the main page and iframe; verify native setters against actual input and textarea elements.
+- Accept PowerShell UTF-8 BOM input during stdio MCP initialization as well as CLI calls.
 - Add the standalone Windows Electron browser shell, hidden execution, tab management and human handoff.
 - Add managed sessions, scoped daily-browser attachment, saved task steps, upload/download tracking and postcondition-based recovery.
 - Add page screenshots, multi-viewport overflow/broken-image checks, idle session closure and resource metrics.
