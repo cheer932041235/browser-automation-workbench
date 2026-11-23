@@ -1,6 +1,9 @@
 // Page Analysis Module
 // 页面结构化分析、元素发现、可访问性树、内容提取
 
+import fs from 'node:fs';
+import path from 'node:path';
+
 export class PageAnalyzer {
   constructor(cdp, waiter) {
     this.cdp = cdp;
@@ -27,11 +30,12 @@ export class PageAnalyzer {
         const style = getComputedStyle(el);
         if (style.display === 'none' || style.visibility === 'hidden') continue;
         
+        const isSecret = el.type === 'password' || el.autocomplete === 'one-time-code';
         const item = {
           idx: results.length,
           tag: el.tagName.toLowerCase(),
           type: el.type || el.getAttribute('role') || '',
-          text: (el.textContent || el.value || el.placeholder || el.title || el.alt || '').trim().slice(0, 80),
+          text: (el.textContent || (isSecret ? '' : el.value) || el.placeholder || el.title || el.alt || '').trim().slice(0, 80),
           selector: genSelector(el),
           visible: rect.top >= 0 && rect.top < window.innerHeight,
         };
@@ -110,19 +114,22 @@ export class PageAnalyzer {
     const js = `(() => {
       const form = document.querySelector(${JSON.stringify(formSelector)}) || document.body;
       const inputs = form.querySelectorAll('input,textarea,select');
-      return [...inputs].map(el => ({
-        tag: el.tagName.toLowerCase(),
-        type: el.type || '',
-        name: el.name || '',
-        id: el.id || '',
-        value: el.value || '',
-        placeholder: el.placeholder || '',
-        label: el.labels?.[0]?.textContent?.trim() || '',
-        required: el.required,
-        disabled: el.disabled,
-        options: el.tagName === 'SELECT' ? [...el.options].map(o => ({value: o.value, text: o.textContent.trim()})) : undefined,
-        selector: el.id ? '#'+el.id : el.name ? el.tagName.toLowerCase()+'[name="'+el.name+'"]' : null,
-      }));
+      return [...inputs].map(el => {
+        const isSecret = el.type === 'password' || el.autocomplete === 'one-time-code';
+        return {
+          tag: el.tagName.toLowerCase(),
+          type: el.type || '',
+          name: el.name || '',
+          id: el.id || '',
+          value: isSecret ? (el.value ? '[REDACTED]' : '') : (el.value || ''),
+          placeholder: el.placeholder || '',
+          label: el.labels?.[0]?.textContent?.trim() || '',
+          required: el.required,
+          disabled: el.disabled,
+          options: el.tagName === 'SELECT' ? [...el.options].map(o => ({value: o.value, text: o.textContent.trim()})) : undefined,
+          selector: el.id ? '#'+el.id : el.name ? el.tagName.toLowerCase()+'[name="'+el.name+'"]' : null,
+        };
+      });
     })()`;
     const resp = await this.cdp.sendToTarget(targetId, 'Runtime.evaluate', {
       expression: js, returnByValue: true, awaitPromise: true,
@@ -218,8 +225,9 @@ export class PageAnalyzer {
 
     await this.cdp.sendToTarget(targetId, 'Runtime.enable', {});
 
-    const entry = this.cdp.on('Runtime.consoleAPICalled', (params) => {
+    const entry = this.cdp.onTarget('Runtime.consoleAPICalled', targetId, (params) => {
       this.consoleLogs.push({
+        targetId,
         type: params.type,
         text: (params.args || []).map(a => a.value ?? a.description ?? '').join(' ').slice(0, 500),
         time: Date.now(),
@@ -228,8 +236,9 @@ export class PageAnalyzer {
       if (this.consoleLogs.length > this.maxConsoleLogs) this.consoleLogs.shift();
     });
 
-    const exEntry = this.cdp.on('Runtime.exceptionThrown', (params) => {
+    const exEntry = this.cdp.onTarget('Runtime.exceptionThrown', targetId, (params) => {
       this.consoleLogs.push({
+        targetId,
         type: 'error',
         text: params.exceptionDetails?.text || params.exceptionDetails?.exception?.description || 'Unknown error',
         time: Date.now(),
@@ -249,6 +258,7 @@ export class PageAnalyzer {
 
   getConsoleLogs(opts = {}) {
     let logs = [...this.consoleLogs];
+    if (opts.targetId) logs = logs.filter(l => l.targetId === opts.targetId);
     if (opts.level) logs = logs.filter(l => l.type === opts.level);
     if (opts.filter) {
       const re = new RegExp(opts.filter, 'i');
@@ -257,8 +267,12 @@ export class PageAnalyzer {
     return logs.slice(-(opts.limit || 100));
   }
 
-  clearConsoleLogs() {
-    this.consoleLogs = [];
+  clearConsoleLogs(targetId = null) {
+    if (targetId) {
+      this.consoleLogs = this.consoleLogs.filter(l => l.targetId !== targetId);
+    } else {
+      this.consoleLogs = [];
+    }
     return { cleared: true };
   }
 
@@ -266,7 +280,7 @@ export class PageAnalyzer {
     this._consoleTargets.delete(targetId);
     const events = this._consoleEvents.get(targetId);
     if (events) {
-      for (const { method, entry } of events) this.cdp.off(method, entry);
+      for (const { method, entry } of events) this.cdp.offTarget(method, targetId, entry);
       this._consoleEvents.delete(targetId);
     }
   }
@@ -344,7 +358,7 @@ export class PageAnalyzer {
   }
 
   // --- Shadow DOM 穿透填值 ---
-  async fillInShadowDOM(targetId, selector, value) {
+  async fillInShadowDOM(targetId, selector, value, opts = {}) {
     const js = `(() => {
       function findInShadow(root) {
         const el = root.querySelector(${JSON.stringify(selector)});
@@ -370,7 +384,8 @@ export class PageAnalyzer {
       else el.value = ${JSON.stringify(value)};
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
-      return { filled: true, tag: el.tagName, value: el.value.slice(0, 100), inShadow: true };
+      const isSecret = ${Boolean(opts.sensitive)} || (el.type || '').toLowerCase() === 'password' || el.autocomplete === 'one-time-code';
+      return { filled: true, tag: el.tagName, value: isSecret ? '[REDACTED]' : el.value.slice(0, 100), inShadow: true };
     })()`;
     const resp = await this.cdp.sendToTarget(targetId, 'Runtime.evaluate', {
       expression: js, returnByValue: true, awaitPromise: true,
@@ -383,18 +398,18 @@ export class PageAnalyzer {
     const params = { format: opts.format || 'png' };
     if (params.format === 'jpeg') params.quality = opts.quality || 80;
     if (opts.fullPage) {
-      // 获取页面尺寸并设置 clip
+      // 获取页面尺寸并设置 clip（限制最大高度 12000px 以免超出 GPU 表面上限）
       const metrics = await this.cdp.sendToTarget(targetId, 'Page.getLayoutMetrics', {});
       params.clip = {
         x: 0, y: 0,
-        width: metrics.result.cssContentSize?.width || metrics.result.contentSize?.width || 1920,
-        height: metrics.result.cssContentSize?.height || metrics.result.contentSize?.height || 1080,
+        width: Math.min(Math.ceil(metrics.result.cssContentSize?.width || metrics.result.contentSize?.width || 1920), 3840),
+        height: Math.min(Math.ceil(metrics.result.cssContentSize?.height || metrics.result.contentSize?.height || 1080), 12000),
         scale: 1,
       };
     }
     if (opts.selector) {
       const coordResp = await this.cdp.sendToTarget(targetId, 'Runtime.evaluate', {
-        expression: `(() => { const el = document.querySelector(${JSON.stringify(opts.selector)}); if(!el) return null; const r = el.getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height}; })()`,
+        expression: `(() => { const el = document.querySelector(${JSON.stringify(opts.selector)}); if(!el) return null; el.scrollIntoView({ block: 'center', behavior: 'instant' }); const r = el.getBoundingClientRect(); return { x: Math.max(0, r.x), y: Math.max(0, r.y), width: r.width, height: r.height }; })()`,
         returnByValue: true,
       });
       if (coordResp.result?.result?.value) {
@@ -403,8 +418,8 @@ export class PageAnalyzer {
     }
     const resp = await this.cdp.sendToTarget(targetId, 'Page.captureScreenshot', params);
     if (filePath) {
-      const fs = await import('node:fs');
-      fs.default.writeFileSync(filePath, Buffer.from(resp.result.data, 'base64'));
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, Buffer.from(resp.result.data, 'base64'));
       return { saved: filePath };
     }
     return { base64: resp.result.data, size: resp.result.data.length };
@@ -422,8 +437,8 @@ export class PageAnalyzer {
       marginLeft: opts.marginLeft || 0.4,
       marginRight: opts.marginRight || 0.4,
     });
-    const fs = await import('node:fs');
-    fs.default.writeFileSync(filePath, Buffer.from(resp.result.data, 'base64'));
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, Buffer.from(resp.result.data, 'base64'));
     return { saved: filePath };
   }
 }

@@ -1,140 +1,80 @@
-# Browser Engine - 增强版浏览器自动化引擎
+# Browser Engine — 执行引擎与受管工作台核心
 
-通过 Chrome DevTools Protocol (CDP) 连接用户日常 Edge/Chrome 浏览器，提供完整的自动化 HTTP API。
+通过 Chrome DevTools Protocol (CDP) 同时支撑两套本地入口：
+- **受管浏览器工作台（`:3460` + stdio MCP）**：`workbench.mjs` + `sessions.mjs` + `workflows.mjs` + `packages/browser-desktop`，提供 项目内独立 Profile 隔离、空闲自动休眠、进程/页面自愈、人工登录交接与断点任务恢复。
+- **日常浏览器执行引擎（`:3456` + `be.mjs`）**：通过 `DevToolsActivePort` 连接日常 Edge / Chrome，提供稳定的 REST API 与 CLI 供单次探索、`Browser Intelligence` 录制分析及 `DemoRecorder` 网页视口录屏使用。
 
-## 特性
-
-- **连接用户日常浏览器**：天然携带登录态，无需启动独立浏览器
-- **丰富的交互能力**：点击、输入、键盘快捷键、表单填写、文件上传、拖拽
-- **页面结构化分析**：交互元素发现、文本提取、表单字段、链接列表、表格数据
-- **网络管理**：请求监控、Cookie/Storage 管理、请求拦截、下载跟踪
-- **任务持久化**：断点恢复、步骤状态保存，对话中断后可继续
-- **智能等待**：等待元素/文本/网络空闲
-- **Session 导入导出**：保存和恢复完整的浏览器会话状态
-- **进程持久化**：不绑定对话，不会因对话中断而丢失
+> 详细使用指南见仓库根目录 [README.md](../../README.md)、[受管工作台说明](../../docs/managed-workbench.md) 与 [执行引擎文档](../../docs/browser-engine.md)。
 
 ## 快速开始
 
-```bash
-# 前置条件：
-# 1. Node.js 22+
-# 2. Edge 已开启远程调试：edge://inspect/#remote-debugging
+### 1. 受管工作台（`:3460` + MCP）
 
-# 启动
-node start.mjs
+```powershell
+# 启动或复用 :3460 后台工作台（从仓库根目录运行）
+npm run workbench:start
 
-# 或直接指定端口
-node server.mjs --browser-port 59888
+# 或在独立桌面外壳（「我的浏览器」）打开工作台页面
+npm run workbench:open
+
+# CLI / stdio MCP 调用
+'{"includeMetrics":true}' | node packages/browser-engine/workbench-client.mjs browser_sessions
 ```
 
-## API 文档
+### 2. 日常浏览器引擎（`:3456`）
 
-### 系统
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/health` | GET | 健康检查，返回连接状态 |
-
-### Tab 管理
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/tabs` | GET | 列出所有标签页 |
-| `/tabs/new?url=` | POST | 创建新后台标签页 |
-| `/tabs/close?target=` | GET | 关闭标签页 |
-| `/tabs/closeAll` | GET | 关闭所有托管的标签页 |
-| `/tabs/closeGroup?group=` | GET | 关闭指定分组的标签页 |
-| `/tabs/navigate?target=&url=` | POST | 导航到 URL |
-| `/tabs/back?target=` | GET | 后退 |
-| `/tabs/forward?target=` | GET | 前进 |
-| `/tabs/reload?target=` | GET | 刷新 |
-| `/tabs/info?target=` | GET | 获取页面信息 |
-
-### 交互
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/eval?target=` | POST | 执行 JS（body=表达式） |
-| `/click?target=` | POST | JS 点击（body=CSS 选择器） |
-| `/clickByText?target=` | POST | 通过文本内容点击 `{text, tag?}` |
-| `/clickAt?target=` | POST | 真实鼠标点击（触发用户手势） |
-| `/clickXY?target=` | POST | 坐标点击 `{x, y}` |
-| `/type?target=` | POST | 逐字符键盘输入 `{text, delay?}` |
-| `/fill?target=` | POST | 快速填充输入框 `{selector, value}` |
-| `/fillForm?target=` | POST | 批量填写表单 `{fields: [{selector, value}]}` |
-| `/pressKey?target=` | POST | 按键 `{key, modifiers?}` |
-| `/hotkey?target=` | POST | 组合键 `{keys: ['Control','a']}` |
-| `/hover?target=` | POST | 悬停（body=选择器） |
-| `/scroll?target=` | POST | 滚动 `{direction?, y?, selector?}` |
-| `/select?target=` | POST | 下拉框选择 `{selector, value}` |
-| `/checkbox?target=` | POST | 复选框 `{selector, checked?}` |
-| `/upload?target=` | POST | 文件上传 `{selector, files:[]}` |
-| `/drag?target=` | POST | 拖拽 `{from, to}` |
-
-### 页面分析
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/page/elements?target=` | POST | 获取交互元素列表 |
-| `/page/text?target=` | POST | 获取页面文本内容 |
-| `/page/forms?target=` | POST | 获取表单字段 |
-| `/page/links?target=` | POST | 获取链接列表 `{filter?}` |
-| `/page/table?target=` | POST | 获取表格数据 `{selector?}` |
-| `/page/waitElement?target=` | POST | 等待元素出现 `{selector, timeout?}` |
-| `/page/waitText?target=` | POST | 等待文本出现 `{text, timeout?}` |
-| `/page/waitNetwork?target=` | POST | 等待网络空闲 |
-| `/screenshot?target=` | POST | 截图 `{file?, fullPage?, selector?}` |
-| `/pdf?target=` | POST | 生成 PDF `{file}` |
-
-### 网络
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/network/monitor?target=` | GET | 启用网络监控 |
-| `/network/requests` | POST | 获取最近请求 `{type?, urlPattern?, limit?}` |
-| `/network/response?target=&requestId=` | GET | 获取响应内容 |
-| `/network/intercept?target=` | POST | 设置请求拦截 `{rules}` |
-| `/cookies?target=` | GET/POST/DELETE | Cookie 管理 |
-| `/storage?target=&type=` | GET/POST | localStorage/sessionStorage |
-| `/session/export?target=` | POST | 导出 Session `{file}` |
-| `/session/import?target=` | POST | 导入 Session `{file}` |
-| `/downloads?target=&enable=1` | GET | 下载管理 |
-
-### 任务持久化
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/tasks` | GET | 列出所有任务 |
-| `/tasks` | POST | 创建任务 `{id, name, steps:[{id, description}]}` |
-| `/tasks/get?id=` | GET | 获取任务详情 |
-| `/tasks/next?id=` | GET | 获取下一个待执行步骤 |
-| `/tasks/step/start` | POST | 标记步骤开始 `{taskId, stepId}` |
-| `/tasks/step/done` | POST | 标记步骤完成 `{taskId, stepId, result?}` |
-| `/tasks/step/fail` | POST | 标记步骤失败 `{taskId, stepId, error}` |
-| `/tasks/context?id=` | POST | 更新共享上下文 |
-| `/tasks/pause?id=` | GET | 暂停任务 |
-| `/tasks/delete?id=` | GET | 删除任务 |
-
-## 架构
-
-```
-server.mjs          HTTP API 路由层
-├── core.mjs        CDP 连接引擎（WebSocket 管理、命令发送、事件分发）
-├── tabs.mjs        Tab 生命周期管理（创建/关闭/导航/分组）
-├── interact.mjs    交互层（点击/输入/键盘/鼠标/表单/文件）
-├── page.mjs        页面分析（元素发现/文本提取/等待策略/截图）
-├── network.mjs     网络层（监控/拦截/Cookie/Storage/下载）
-└── tasks.mjs       任务持久化（断点恢复/步骤状态/上下文保存）
+```powershell
+# 前置：Chrome/Edge 开启远程调试（edge://inspect/#remote-debugging）
+# 从 packages/browser-engine 或仓库根目录运行：
+node packages/browser-engine/be.mjs preflight     # 预检本机调试端口与 :3456 状态
+node packages/browser-engine/start.mjs           # 后台启动（传 --foreground 前台运行）
+node packages/browser-engine/be.mjs reconnect    # 日常浏览器重启后按最新端口重连
 ```
 
-## 与 Windsurf/Cascade 集成
+## 核心模块分布
 
-Browser Engine 通过 `curl` 命令调用，不依赖 MCP 协议，对话中断不影响进程。
+```text
+packages/browser-engine/
+├── workbench.mjs            # :3460 工作台服务、SSE 事件流与 MCP 工具实现
+├── workbench-client.mjs     # stdio MCP 桥 & 命令行调用客户端
+├── sessions.mjs             # 受管/附着会话生命周期、空闲休眠与内存指标采样
+├── workflows.mjs            # 可恢复多步任务执行、后置校验与敏感字段脱敏
+├── browsers.mjs             # DevToolsActivePort 发现、预检与受管实例拉起
+├── desktop-control.mjs      # Electron 桌面外壳控制接口客户端
+├── managed-appearance.mjs   # 受管 Chrome 名称/深绿主题配置与禁用账号同步
+├── web/                     # :3460 管理界面静态资源
+│
+├── start.mjs · server.mjs · be.mjs  # :3456 引擎启动器、HTTP 服务与 CLI
+├── core.mjs                 # CDP WebSocket（自动重连、onTarget/offTarget 事件隔离）
+├── tabs.mjs · frames.mjs · wait.mjs # 标签生命周期、跨站 iframe 与精确等待
+├── interact.mjs · page.mjs · pipeline.mjs  # 交互/脱敏表单/页面提取/页内 JS 编译
+├── network.mjs · navigation.mjs · dialog.mjs  # 网络监控、导航留痕与非破坏弹窗处理
+├── detect.mjs · accessibility.mjs · autoshot.mjs  # 障碍检测、无障碍树与操作截图
+├── batch.mjs · stealth.mjs · profiles.mjs · tasks.mjs  # 并发/反检测/档案/持久化（目录锚定 runtime/）
+└── demo-recorder.mjs        # CDP Screencast + FFmpeg 恒定帧率网页视口录像器
+```
 
-```bash
-# 创建新 tab
-curl -s "http://localhost:3456/tabs/new?url=https://example.com"
+## `:3456` 主要 HTTP 端点
 
-# 获取页面交互元素
-curl -s -X POST "http://localhost:3456/page/elements?target=TARGET_ID"
+- **系统与连接**：`GET /health`（含 `endpoint` 预检信息）、`GET /help`、`POST /reconnect`
+- **标签管理**：`GET /tabs`、`GET|POST /tabs/new`、`GET|POST /tabs/open`、`GET /tabs/close`、`GET /tabs/closeAll`、`GET /tabs/closeGroup`、`POST /tabs/navigate`、`GET /tabs/back|forward|reload|info`
+- **交互**：`POST /eval`、`/click`、`/clickByText`、`/clickAt`、`/clickXY`、`/doubleClick`、`/rightClick`、`/hover`、`/safeClick`、`/type`、`/insertText`、`/fill`、`/fillForm`、`/pressKey`、`/hotkey`、`/scroll`、`/select`、`/checkbox`、`/upload`、`/drag`、`/actionability`
+- **页面分析**：`POST /page/elements`、`/page/text`、`/page/forms`、`/page/links`、`/page/table`、`/screenshot`（`be.mjs shot` 默认写入 `work/screenshots/`）、`/pdf`
+- **等待与状态**：`POST /page/waitElement`、`/page/waitText`、`/page/waitNetwork`、`/wait/*`、`/detect/*`
+- **网络与存储**：`GET /network/monitor`、`/network/stop`、`POST /network/requests`（支持 `?target=`）、`GET /network/response`、`POST /network/intercept`、`GET|POST|DELETE /cookies`、`/storage`、`/session/export|import`、`GET /downloads`
+- **高级能力**：`/frames/*`、`/shadow/*`、`/console/*`（按 `targetId` 隔离）、`/dialog/*`、`/accessibility/*`、`/autoshot/*`、`/nav/*`、`/profiles/*`、`/tasks/*`、`/batch/*`、`/pipeline`
 
-# 点击按钮
-curl -s -X POST "http://localhost:3456/clickByText?target=TARGET_ID" -d '{"text":"登录"}'
+## `:3460` MCP 工具概览
 
-# 截图
-curl -s -X POST "http://localhost:3456/screenshot?target=TARGET_ID" -d '{"file":"C:/tmp/shot.png"}'
+- **会话管理**：`browser_sessions`（支持 `includeMetrics: true`）、`browser_session_create`（支持 `idleTimeoutMinutes`）、`browser_session_attach`、`browser_session_start`、`browser_session_close`、`browser_session_request_human`、`browser_session_show_human`、`browser_session_resume_background`
+- **页面与巡检**：`browser_pages`、`browser_page_open`、`browser_page_read`、`browser_page_focus`、`browser_page_screenshot`（支持桌面隐藏窗口离屏截屏与长页截图）、`browser_page_check`（默认 `1440px`/`390px` 横向溢出与裂图检测）、`browser_frames`、`browser_frame_read`、`browser_downloads`
+- **可恢复任务**：`browser_tasks`、`browser_task_create`、`browser_task_get`、`browser_task_run`（支持内存 `values` 填入脱敏字段）、`browser_task_rebind`
+
+## 离线测试
+
+从仓库根目录运行：
+
+```powershell
+npm run check:engine
+npm run test:engine
 ```

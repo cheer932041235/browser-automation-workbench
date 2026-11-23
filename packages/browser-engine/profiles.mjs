@@ -4,10 +4,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 export class SiteProfiles {
   constructor(opts = {}) {
-    this._profileDir = opts.dir || path.join(process.cwd(), '.site-profiles');
+    this._profileDir = opts.dir || path.join(projectRoot, 'runtime', 'site-profiles');
     this._cache = new Map(); // domain -> profile
     if (!fs.existsSync(this._profileDir)) fs.mkdirSync(this._profileDir, { recursive: true });
   }

@@ -4,6 +4,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 export class AutoScreenshot {
   constructor(cdp, page) {
@@ -11,7 +14,7 @@ export class AutoScreenshot {
     this.page = page;        // PageAnalyzer 实例（复用 screenshot 方法）
     this._enabled = new Map();  // targetId -> { dir, history, maxHistory }
     this._globalEnabled = false;
-    this._defaultDir = path.join(process.cwd(), '.screenshots');
+    this._defaultDir = path.join(projectRoot, 'runtime', 'autoshot');
   }
 
   // 启用自动截图

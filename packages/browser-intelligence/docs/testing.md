@@ -117,9 +117,9 @@ logs/browser-intelligence/
 最近一次运行结果：
 
 ```text
-tests 76
+tests 78
 suites 19
-pass 76
+pass 78
 fail 0
 ```
 

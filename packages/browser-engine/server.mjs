@@ -4,6 +4,7 @@
 // 启动: node server.mjs [--port 3456] [--browser-port 59888]
 
 import http from 'node:http';
+import { defaultBrowser, browserProfile, inspectBrowserEndpoint } from './browsers.mjs';
 import { URL } from 'node:url';
 import CDPConnection from './core.mjs';
 import TabManager from './tabs.mjs';
@@ -30,49 +31,63 @@ function getArg(name, def) {
   return idx >= 0 && args[idx + 1] ? args[idx + 1] : def;
 }
 const PORT = parseInt(getArg('--port', process.env.ENGINE_PORT || '3456'));
+const BROWSER = getArg('--browser', defaultBrowser);
+const USER_DATA_DIR = getArg('--user-data-dir', null);
 const BROWSER_PORT = getArg('--browser-port', process.env.BROWSER_PORT || null);
 
 // --- 初始化模块 ---
-const cdp = new CDPConnection();
-const tabs = new TabManager(cdp);
-const interact = new Interactor(cdp);
-const waiter = new SmartWaiter(cdp);
-const page = new PageAnalyzer(cdp, waiter);
-const network = new NetworkManager(cdp);
-const taskMgr = new TaskManager();
-const frames = new FrameManager(cdp);
-const stealth = new StealthManager(cdp);
-const detector = new PageDetector(cdp);
-const batch = new BatchProcessor(cdp, tabs, interact, page, stealth, waiter);
-const dialog = new DialogHandler(cdp);
-const axTree = new AccessibilitySnapshot(cdp);
-const pipeline = new Pipeline(cdp);
-const autoshot = new AutoScreenshot(cdp, page);
-const navTracker = new NavigationTracker(cdp);
-const profiles = new SiteProfiles();
+function createContext(browser) {
+  browserProfile(browser);
+  const cdp = new CDPConnection({ browser, userDataDir: browser === BROWSER ? USER_DATA_DIR : undefined });
+  cdp.autoReconnect = true;
+  const tabs = new TabManager(cdp);
+  const interact = new Interactor(cdp);
+  const waiter = new SmartWaiter(cdp);
+  const page = new PageAnalyzer(cdp, waiter);
+  const network = new NetworkManager(cdp);
+  const taskMgr = new TaskManager();
+  const frames = new FrameManager(cdp);
+  const stealth = new StealthManager(cdp);
+  const detector = new PageDetector(cdp);
+  const batch = new BatchProcessor(cdp, tabs, interact, page, stealth, waiter);
+  const dialog = new DialogHandler(cdp);
+  const axTree = new AccessibilitySnapshot(cdp);
+  const pipeline = new Pipeline(cdp);
+  const autoshot = new AutoScreenshot(cdp, page);
+  const navTracker = new NavigationTracker(cdp);
+  const profiles = new SiteProfiles();
 
-// --- Tab 关闭时通知各模块清理 ---
-tabs.onTabClose((targetId) => {
-  stealth.onTargetClosed(targetId);
-  network._cleanupTarget(targetId);
-  page.onTargetClosed(targetId);
-  dialog.onTargetClosed(targetId);
-  axTree.onTargetClosed(targetId);
-  autoshot.onTargetClosed(targetId);
-  navTracker.onTargetClosed(targetId);
-});
+  // --- Tab 关闭时通知各模块清理 ---
+  tabs.onTabClose((targetId) => {
+    stealth.onTargetClosed(targetId);
+    network._cleanupTarget(targetId);
+    page.onTargetClosed(targetId);
+    dialog.onTargetClosed(targetId);
+    axTree.onTargetClosed(targetId);
+    autoshot.onTargetClosed(targetId);
+    navTracker.onTargetClosed(targetId);
+  });
 
-// --- 浏览器重连后重置所有模块状态 ---
-cdp.onReconnect(() => {
-  stealth.resetState();
-  network.resetState();
-  page.resetState();
-  dialog.resetState();
-  axTree.resetState();
-  autoshot.resetState();
-  navTracker.resetState();
-  tabs.managedTabs.clear();
-});
+  // --- 浏览器重连后重置所有模块状态 ---
+  cdp.onReconnect(() => {
+    stealth.resetState();
+    network.resetState();
+    page.resetState();
+    dialog.resetState();
+    axTree.resetState();
+    autoshot.resetState();
+    navTracker.resetState();
+    tabs.managedTabs.clear();
+  });
+
+  return { cdp, tabs, interact, waiter, page, network, taskMgr, frames, stealth, detector, batch, dialog, axTree, pipeline, autoshot, navTracker, profiles };
+}
+const contexts = new Map();
+function contextFor(browser) {
+  if (!contexts.has(browser)) contexts.set(browser, createContext(browser));
+  return contexts.get(browser);
+}
+const primary = contextFor(BROWSER);
 
 // --- 读取请求体 ---
 async function readBody(req) {
@@ -91,7 +106,7 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsed.pathname;
   const q = Object.fromEntries(parsed.searchParams);
   const target = q.target;
-  if (target) tabs.touch(target);
+
 
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -101,24 +116,128 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { res.end(''); return; }
 
   try {
+    const browser = q.browser || BROWSER;
+    const { cdp, tabs, interact, waiter, page, network, taskMgr, frames, stealth, detector, batch, dialog, axTree, pipeline, autoshot, navTracker, profiles } = contextFor(browser);
+    if (target) tabs.touch(target);
     // ===== 系统 =====
     if (pathname === '/health') {
       return ok(res, {
         status: 'ok',
-        connected: cdp.connected,
+        browser,
+        profile: browserProfile(browser, browser === BROWSER ? USER_DATA_DIR : undefined),
+        connectionState: cdp.connected ? 'connected' : cdp.connectingPromise ? 'connecting' : 'disconnected',
+        connected: Boolean(cdp.connected),
         browserPort: cdp.port,
         sessions: cdp.sessions.size,
         managedTabs: tabs.managedTabs.size,
         uptime: process.uptime(),
+        endpoint: inspectBrowserEndpoint(browser, browser === BROWSER ? USER_DATA_DIR : undefined),
       });
+    }
+    if (pathname === '/help') return ok(res, API_HELP);
+    if (pathname === '/reconnect') {
+      const hadAuto = cdp.autoReconnect;
+      cdp.autoReconnect = false;
+      try { cdp.ws?.close(); } catch {}
+      cdp.ws = null;
+      cdp.reconnectAttempts = 0;
+      cdp.autoReconnect = hadAuto;
+      await cdp.connect(browser === BROWSER && BROWSER_PORT ? parseInt(BROWSER_PORT) : null);
+      return ok(res, { reconnected: true, browser, port: cdp.port, connected: Boolean(cdp.connected) });
+    }
+
+    // ===== 任务管理（本地持久化，不依赖实时浏览器连接） =====
+    if (pathname === '/tasks') {
+      if (req.method === 'GET') return ok(res, taskMgr.list());
+      const body = parseJSON(await readBody(req));
+      if (!body?.id || !body?.name || !body?.steps) return err(res, '需要 id, name, steps');
+      return ok(res, taskMgr.create(body.id, body));
+    }
+    if (pathname === '/tasks/get') {
+      return ok(res, taskMgr.get(q.id) || { error: '任务不存在' });
+    }
+    if (pathname === '/tasks/step/start') {
+      const body = parseJSON(await readBody(req)) || {};
+      return ok(res, taskMgr.stepStart(body.taskId || q.taskId, body.stepId || q.stepId));
+    }
+    if (pathname === '/tasks/step/done') {
+      const body = parseJSON(await readBody(req)) || {};
+      return ok(res, taskMgr.stepDone(body.taskId, body.stepId, body.result));
+    }
+    if (pathname === '/tasks/step/fail') {
+      const body = parseJSON(await readBody(req)) || {};
+      return ok(res, taskMgr.stepFail(body.taskId, body.stepId, body.error));
+    }
+    if (pathname === '/tasks/next') {
+      return ok(res, taskMgr.getNextStep(q.id) || { done: true });
+    }
+    if (pathname === '/tasks/context') {
+      const body = parseJSON(await readBody(req)) || {};
+      return ok(res, taskMgr.updateContext(q.id, body));
+    }
+    if (pathname === '/tasks/pause') {
+      return ok(res, taskMgr.pause(q.id));
+    }
+    if (pathname === '/tasks/delete') {
+      return ok(res, { deleted: taskMgr.delete(q.id) });
+    }
+
+    // ===== 站点 Profile（本地持久化，不依赖实时浏览器连接） =====
+    if (pathname === '/profiles') {
+      if (req.method === 'GET') return ok(res, profiles.list());
+      const body = parseJSON(await readBody(req));
+      if (!body?.domain) return err(res, '需要 domain');
+      return ok(res, profiles.set(body.domain, body));
+    }
+    if (pathname === '/profiles/get') {
+      const domain = q.domain || q.url;
+      if (!domain) return err(res, '需要 domain');
+      return ok(res, profiles.get(domain) || { notFound: true });
+    }
+    if (pathname === '/profiles/match') {
+      const url = q.url || q.domain;
+      if (!url) return err(res, '需要 url');
+      return ok(res, profiles.match(url) || { notFound: true });
+    }
+    if (pathname === '/profiles/delete') {
+      const domain = q.domain;
+      if (!domain) return err(res, '需要 domain');
+      return ok(res, profiles.delete(domain));
+    }
+    if (pathname === '/profiles/selector') {
+      const body = parseJSON(await readBody(req));
+      if (!body?.domain || !body?.name || !body?.selector) return err(res, '需要 domain, name, selector');
+      return ok(res, profiles.addSelector(body.domain, body.name, body.selector, body.description));
+    }
+    if (pathname === '/profiles/note') {
+      const body = parseJSON(await readBody(req));
+      if (!body?.domain || !body?.note) return err(res, '需要 domain, note');
+      return ok(res, profiles.addNote(body.domain, body.note));
     }
 
     // 所有其他端点需要连接
-    await cdp.connect(BROWSER_PORT ? parseInt(BROWSER_PORT) : null);
+    await cdp.connect(browser === BROWSER && BROWSER_PORT ? parseInt(BROWSER_PORT) : null);
+    if (target && pathname !== '/page/inspect') await tabs.requirePage(target);
+    if (pathname === '/page/inspect') {
+      if (!target) return err(res, '需要 target 参数');
+      return ok(res, await tabs.inspect(target));
+    }
 
     // ===== Tab 管理 =====
     if (pathname === '/tabs') {
       return ok(res, await tabs.listAll());
+    }
+    if (pathname === '/tabs/open') {
+      const body = parseJSON(await readBody(req));
+      const url = body?.url || q.url;
+      if (!url) return err(res, '需要 url 参数');
+      return ok(res, await tabs.open(url));
+    }
+    if (pathname === '/tabs/openExact') {
+      const body = parseJSON(await readBody(req));
+      const url = body?.url || q.url;
+      if (!url) return err(res, '需要 url 参数');
+      return ok(res, await tabs.openExact(url));
     }
     if (pathname === '/tabs/new') {
       const body = parseJSON(await readBody(req));
@@ -126,6 +245,12 @@ const server = http.createServer(async (req, res) => {
       const group = body?.group || q.group || 'default';
       const targetId = await tabs.create(url, group);
       return ok(res, { targetId, url, group });
+    }
+    if (pathname === '/tabs/activate') {
+      if (!target) return err(res, '需要 target 参数');
+      await cdp.send('Target.activateTarget', { targetId: target });
+      await cdp.sendToTarget(target, 'Page.bringToFront');
+      return ok(res, { activated: true });
     }
     if (pathname === '/tabs/close') {
       await tabs.close(target);
@@ -314,10 +439,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === '/console/logs') {
       const body = parseJSON(await readBody(req)) || {};
-      return ok(res, page.getConsoleLogs({ ...body, ...q }));
+      return ok(res, page.getConsoleLogs({ ...body, ...q, ...(target ? { targetId: target } : {}) }));
     }
     if (pathname === '/console/clear') {
-      return ok(res, page.clearConsoleLogs());
+      return ok(res, page.clearConsoleLogs(target || null));
     }
     if (pathname === '/console/stop') {
       page.stopConsoleCapture(target);
@@ -368,8 +493,9 @@ const server = http.createServer(async (req, res) => {
       return ok(res, { stopped: true });
     }
     if (pathname === '/network/requests') {
+      if (!target) return err(res, '需要 target 参数');
       const body = parseJSON(await readBody(req)) || {};
-      return ok(res, network.getRecentRequests(body));
+      return ok(res, network.getRecentRequests({ ...body, targetId: target }));
     }
     if (pathname === '/network/response') {
       const requestId = q.requestId;
@@ -415,42 +541,6 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/downloads') {
       if (q.enable === '1') return ok(res, await network.enableDownloads(target));
       return ok(res, network.getDownloadStatus());
-    }
-
-    // ===== 任务管理 =====
-    if (pathname === '/tasks') {
-      if (req.method === 'GET') return ok(res, taskMgr.list());
-      const body = parseJSON(await readBody(req));
-      if (!body?.id || !body?.name || !body?.steps) return err(res, '需要 id, name, steps');
-      return ok(res, taskMgr.create(body.id, body));
-    }
-    if (pathname === '/tasks/get') {
-      return ok(res, taskMgr.get(q.id) || { error: '任务不存在' });
-    }
-    if (pathname === '/tasks/step/start') {
-      const body = parseJSON(await readBody(req)) || {};
-      return ok(res, taskMgr.stepStart(body.taskId || q.taskId, body.stepId || q.stepId));
-    }
-    if (pathname === '/tasks/step/done') {
-      const body = parseJSON(await readBody(req)) || {};
-      return ok(res, taskMgr.stepDone(body.taskId, body.stepId, body.result));
-    }
-    if (pathname === '/tasks/step/fail') {
-      const body = parseJSON(await readBody(req)) || {};
-      return ok(res, taskMgr.stepFail(body.taskId, body.stepId, body.error));
-    }
-    if (pathname === '/tasks/next') {
-      return ok(res, taskMgr.getNextStep(q.id) || { done: true });
-    }
-    if (pathname === '/tasks/context') {
-      const body = parseJSON(await readBody(req)) || {};
-      return ok(res, taskMgr.updateContext(q.id, body));
-    }
-    if (pathname === '/tasks/pause') {
-      return ok(res, taskMgr.pause(q.id));
-    }
-    if (pathname === '/tasks/delete') {
-      return ok(res, { deleted: taskMgr.delete(q.id) });
     }
 
     // ===== iframe 操作 =====
@@ -544,7 +634,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === '/dialog/policy') {
       const body = parseJSON(await readBody(req)) || {};
-      return ok(res, dialog.setPolicy(body.policy || q.policy, body.promptText));
+      return ok(res, dialog.setPolicy(body.policy || q.policy, body.promptText, target || body.targetId || null));
     }
 
     // ===== 无障碍树快照 =====
@@ -707,44 +797,6 @@ const server = http.createServer(async (req, res) => {
       return ok(res, { url: navTracker.getCurrentUrl(target) });
     }
 
-    // ===== 站点 Profile =====
-    if (pathname === '/profiles') {
-      if (req.method === 'GET') return ok(res, profiles.list());
-      const body = parseJSON(await readBody(req));
-      if (!body?.domain) return err(res, '需要 domain');
-      return ok(res, profiles.set(body.domain, body));
-    }
-    if (pathname === '/profiles/get') {
-      const domain = q.domain || q.url;
-      if (!domain) return err(res, '需要 domain');
-      return ok(res, profiles.get(domain) || { notFound: true });
-    }
-    if (pathname === '/profiles/match') {
-      const url = q.url || q.domain;
-      if (!url) return err(res, '需要 url');
-      return ok(res, profiles.match(url) || { notFound: true });
-    }
-    if (pathname === '/profiles/delete') {
-      const domain = q.domain;
-      if (!domain) return err(res, '需要 domain');
-      return ok(res, profiles.delete(domain));
-    }
-    if (pathname === '/profiles/selector') {
-      const body = parseJSON(await readBody(req));
-      if (!body?.domain || !body?.name || !body?.selector) return err(res, '需要 domain, name, selector');
-      return ok(res, profiles.addSelector(body.domain, body.name, body.selector, body.description));
-    }
-    if (pathname === '/profiles/note') {
-      const body = parseJSON(await readBody(req));
-      if (!body?.domain || !body?.note) return err(res, '需要 domain, note');
-      return ok(res, profiles.addNote(body.domain, body.note));
-    }
-
-    // ===== 帮助 =====
-    if (pathname === '/help') {
-      return ok(res, API_HELP);
-    }
-
     // ===== 404 =====
     res.statusCode = 404;
     return ok(res, {
@@ -755,7 +807,8 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     console.error(`[Engine] Error on ${pathname}:`, e.message);
     res.statusCode = 500;
-    res.end(JSON.stringify({ error: e.message }));
+    res.end(JSON.stringify({ error: e.message, code: e.code || 'ENGINE_ERROR',
+      browser: q.browser || BROWSER, targetId: target || null, outcome: e.outcome }));
   }
 });
 
@@ -763,8 +816,8 @@ function ok(res, data) { res.end(JSON.stringify(data, null, 2)); }
 function err(res, msg) { res.statusCode = 400; res.end(JSON.stringify({ error: msg })); }
 
 const API_HELP = {
-  system: ['GET /health', 'GET /help'],
-  tabs: ['GET /tabs', 'GET|POST /tabs/new', 'GET /tabs/close', 'GET /tabs/closeAll', 'GET /tabs/closeGroup', 'POST /tabs/navigate', 'GET /tabs/back', 'GET /tabs/forward', 'GET /tabs/reload', 'GET /tabs/info'],
+  system: ['GET /health', 'GET /help', 'POST /reconnect'],
+  tabs: ['GET /tabs', 'GET|POST /tabs/open (exact URL or unique same-site tab)', 'GET|POST /tabs/openExact (exact URL only)', 'GET|POST /tabs/new', 'GET /tabs/close', 'GET /tabs/closeAll', 'GET /tabs/closeGroup', 'POST /tabs/navigate', 'GET /tabs/back', 'GET /tabs/forward', 'GET /tabs/reload', 'GET /tabs/info', 'GET /page/inspect'],
   interact: ['POST /eval', 'POST /eval?userGesture=1', 'POST /clipboard/write', 'GET /clipboard/read', 'POST /click', 'POST /clickByText', 'POST /clickAt', 'POST /clickXY', 'POST /doubleClick', 'POST /rightClick', 'POST /type', 'POST /insertText', 'POST /fill', 'POST /fillForm', 'POST /pressKey', 'POST /hotkey', 'POST /hover', 'POST /scroll', 'POST /select', 'POST /checkbox', 'POST /upload', 'POST /drag', 'POST /actionability', 'POST /safeClick'],
   page: ['POST /page/elements', 'POST /page/text', 'POST /page/forms', 'POST /page/links', 'POST /page/table', 'POST /page/waitElement', 'POST /page/waitText', 'POST /page/waitNetwork', 'POST /screenshot', 'POST /pdf'],
   console: ['GET /console/enable', 'GET /console/logs', 'GET /console/clear', 'GET /console/stop'],
@@ -819,22 +872,20 @@ async function main() {
 
   server.listen(PORT, '127.0.0.1', () => {
     console.log(`[Browser Engine] ✓ 运行在 http://localhost:${PORT}`);
-    console.log(`[Browser Engine] 浏览器端口: ${BROWSER_PORT || '自动发现'}`);
+    console.log(`[Browser Engine] 固定浏览器: ${BROWSER}; 目录: ${browserProfile(BROWSER, USER_DATA_DIR)}`);
     // 尝试连接
-    cdp.connect(BROWSER_PORT ? parseInt(BROWSER_PORT) : null)
+    primary.cdp.connect(BROWSER_PORT ? parseInt(BROWSER_PORT) : null)
       .then(() => console.log('[Browser Engine] ✓ 浏览器已连接'))
       .catch(e => console.log(`[Browser Engine] 初始连接待命: ${e.message}`));
   });
 
   // 定时清理闲置 tab
-  const cleanup = setInterval(() => tabs.cleanupIdle(), 60000);
-  cleanup.unref();
+  // Browser tabs survive idle periods and engine restarts.
 
   // 优雅关闭
   const shutdown = async (sig) => {
     console.log(`[Engine] ${sig}, 清理中...`);
-    clearInterval(cleanup);
-    await tabs.closeAll();
+    for (const { cdp } of contexts.values()) { cdp.autoReconnect = false; cdp.ws?.close(); }
     process.exit(0);
   };
   process.on('SIGINT', () => shutdown('SIGINT'));

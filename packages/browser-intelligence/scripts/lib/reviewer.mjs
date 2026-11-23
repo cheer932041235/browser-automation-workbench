@@ -12,7 +12,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { tracesDir } from './paths.mjs';
+import { tracesDir, resolveTraceTaskDir } from './paths.mjs';
 
 // ---------------------------------------------------------------------------
 // Data loading
@@ -28,7 +28,8 @@ function loadTrace(taskDir) {
 function loadNetwork(taskDir) {
   const file = path.join(taskDir, 'network.json');
   if (!fs.existsSync(file)) return [];
-  return JSON.parse(fs.readFileSync(file, 'utf-8'));
+  const parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
+  return Array.isArray(parsed) ? parsed : [];
 }
 
 function loadPages(taskDir) {
@@ -318,8 +319,7 @@ function generateReviewReport(analysis) {
 // ---------------------------------------------------------------------------
 
 function reviewTrace(taskId) {
-  const safeName = taskId.replace(/[^a-zA-Z0-9._-]/g, '-').replace(/^-+|-+$/g, '');
-  const taskDir = path.join(tracesDir, safeName);
+  const { taskId: safeName, taskDir } = resolveTraceTaskDir(taskId);
 
   if (!fs.existsSync(taskDir)) {
     throw new Error(`Task directory not found: ${taskDir}`);

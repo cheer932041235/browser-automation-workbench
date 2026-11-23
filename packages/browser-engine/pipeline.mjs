@@ -67,7 +67,8 @@ ${indent}  if (setter) setter.call(el, ${JSON.stringify(step.value || '')});
 ${indent}  else el.value = ${JSON.stringify(step.value || '')};
 ${indent}  el.dispatchEvent(new Event('input',{bubbles:true}));
 ${indent}  el.dispatchEvent(new Event('change',{bubbles:true}));
-${indent}  _results.push({step:${idx},action:'fill',value:el.value.slice(0,100)});
+${indent}  const _isSecret = ${Boolean(step.sensitive)} || (el.type || '').toLowerCase() === 'password' || el.autocomplete === 'one-time-code';
+${indent}  _results.push({step:${idx},action:'fill',value:_isSecret ? '[REDACTED]' : el.value.slice(0,100)});
 ${indent}  ${step.wait ? `await _sleep(${step.wait});` : ''}
 ${indent}}`;
 
@@ -82,7 +83,7 @@ ${indent}    document.execCommand('insertText',false,ch);
 ${indent}    el.dispatchEvent(new KeyboardEvent('keyup',{key:ch,bubbles:true}));
 ${indent}    await _sleep(${step.delay || 20});
 ${indent}  }
-${indent}  _results.push({step:${idx},action:'type',len:${JSON.stringify(step.text || '').length - 2}});
+${indent}  _results.push({step:${idx},action:'type',len:${(step.text || '').length}});
 ${indent}}`;
 
       case 'wait':

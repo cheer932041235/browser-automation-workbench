@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>我的浏览器 · 工作台</title><link rel="icon" href="/brand.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body><main>
+<header><div class="brand"><img src="/brand.svg" width="42" height="42" alt=""><div><p class="eyebrow">我的浏览器</p><h1>浏览器管理</h1><p class="subtitle">网页在独立窗口中打开，后台任务无需保持此页打开。</p></div></div><button id="refresh">刷新</button></header>
+<div id="notice" role="status" aria-live="polite"></div>
+<section class="overview" aria-label="概览"><div><span>专用会话</span><strong id="session-count">0</strong></div><div><span>已连接</span><strong id="connected-count">0</strong></div><div><span>进行中</span><strong id="task-count">0</strong></div><div><span>需要处理</span><strong id="waiting-count">0</strong></div></section>
+<section><div class="section-head"><h2>浏览器会话</h2><button id="toggle-create">新建会话</button></div>
+<form id="create-session" hidden><input type="hidden" name="browser" value="chrome"><div class="fields"><label>会话名称<input name="label" placeholder="论文资料" required></label><label>会话编号<input name="id" placeholder="paper-reading" pattern="[a-z0-9][a-z0-9-]{0,79}" required></label><label>浏览器<select name="engine"><option value="desktop">我的浏览器</option><option value="native">Chrome（原生窗口）</option></select></label><label>所属项目<input name="project" placeholder="项目的绝对路径"></label></div><div class="actions"><button type="submit" class="primary">创建独立会话</button><p>配置与下载保存在工作台数据目录。登录和验证码在对应浏览器中完成。</p></div></form>
+<div id="sessions" class="session-grid"></div></section>
+<section><div class="section-head"><h2>当前任务</h2><span class="muted">按保存的步骤接续</span></div><div id="tasks"></div><details id="history"><summary>已完成任务</summary><div id="completed-tasks"></div></details></section>
+<dialog id="page-dialog"><div class="section-head"><h2>会话页面</h2><button id="close-dialog">关闭</button></div><form id="open-page"><label>网址<input name="url" type="url" placeholder="https://" required></label><button class="primary">打开</button></form><div id="pages"></div></dialog>
+<footer>本地浏览器工作台 · 详细结果保存在所属任务中</footer>
+</main></body></html>

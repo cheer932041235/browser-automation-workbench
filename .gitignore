@@ -4,9 +4,15 @@ logs/
 *.err
 screenshots/
 
-# Browser Engine runtime state
+# Browser Engine runtime state (including legacy CWD paths)
+.tasks/
+.site-profiles/
+.screenshots/
+downloads/
 packages/browser-engine/.tasks/
 packages/browser-engine/.site-profiles/
+packages/browser-engine/.screenshots/
+packages/browser-engine/downloads/
 
 # Node/npm
 node_modules/
@@ -23,3 +29,20 @@ Thumbs.db
 tmp/
 .cache/
 coverage/
+
+# Managed browser data and task artifacts
+runtime/
+work/
+outputs/
+我的浏览器.lnk
+
+# Local credentials and exported browser state
+.env
+.env.*
+!.env.example
+credentials.json
+cookies.json
+storage-state.json
+*.pem
+*.p12
+*.pfx

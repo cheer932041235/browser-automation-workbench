@@ -3,6 +3,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 export class NetworkManager {
   constructor(cdp) {
@@ -11,7 +14,7 @@ export class NetworkManager {
     this.maxLogSize = 200;
     this.interceptRules = []; // { pattern, action: 'block'|'modify', ... }
     this.downloads = new Map(); // guid -> { url, filename, state, path }
-    this.downloadDir = process.env.DOWNLOAD_DIR || path.join(process.cwd(), 'downloads');
+    this.downloadDir = process.env.DOWNLOAD_DIR || path.join(projectRoot, 'runtime', 'engine-downloads');
     this._monitoringTargets = new Set(); // 防止重复注册
     // 按 targetId 追踪事件: targetId -> [{method, entry}]
     this._targetEvents = new Map();
@@ -27,7 +30,7 @@ export class NetworkManager {
   _cleanupTarget(targetId) {
     const events = this._targetEvents.get(targetId);
     if (events) {
-      for (const { method, entry } of events) this.cdp.off(method, entry);
+      for (const { method, entry } of events) this.cdp.offTarget(method, targetId, entry);
       this._targetEvents.delete(targetId);
     }
     this._monitoringTargets.delete(targetId);
@@ -37,13 +40,14 @@ export class NetworkManager {
   async enableMonitoring(targetId) {
     // 防止对同一 target 重复注册事件
     if (this._monitoringTargets.has(targetId)) return { monitoring: true, alreadyEnabled: true };
+    await this.cdp.sendToTarget(targetId, 'Network.enable', {});
     this._monitoringTargets.add(targetId);
 
-    await this.cdp.sendToTarget(targetId, 'Network.enable', {});
-
-    const reqEntry = this.cdp.on('Network.requestWillBeSent', (params) => {
+    const reqEntry = this.cdp.onTarget('Network.requestWillBeSent', targetId, (params) => {
       this.requestLog.push({
         id: params.requestId,
+        targetId,
+        frameId: params.frameId || null,
         url: params.request.url,
         method: params.request.method,
         type: params.type,
@@ -52,8 +56,8 @@ export class NetworkManager {
       if (this.requestLog.length > this.maxLogSize) this.requestLog.shift();
     });
 
-    const respEntry = this.cdp.on('Network.responseReceived', (params) => {
-      const logEntry = this.requestLog.find(r => r.id === params.requestId);
+    const respEntry = this.cdp.onTarget('Network.responseReceived', targetId, (params) => {
+      const logEntry = this.requestLog.findLast(r => r.id === params.requestId && r.targetId === targetId);
       if (logEntry) {
         logEntry.status = params.response.status;
         logEntry.mimeType = params.response.mimeType;
@@ -74,6 +78,7 @@ export class NetworkManager {
   // --- 获取最近的网络请求 ---
   getRecentRequests(opts = {}) {
     let logs = [...this.requestLog];
+    if (opts.targetId) logs = logs.filter(r => r.targetId === opts.targetId);
     if (opts.type) logs = logs.filter(r => r.type === opts.type);
     if (opts.urlPattern) {
       const re = new RegExp(opts.urlPattern, 'i');
@@ -85,6 +90,9 @@ export class NetworkManager {
 
   // --- 获取请求响应内容 ---
   async getResponseBody(targetId, requestId) {
+    if (!this.requestLog.some(r => r.id === requestId && r.targetId === targetId)) {
+      return { error: '该请求不属于指定页面或尚未被该页面监控记录', code: 'REQUEST_NOT_FOUND' };
+    }
     try {
       const resp = await this.cdp.sendToTarget(targetId, 'Network.getResponseBody', { requestId });
       return {
@@ -152,7 +160,7 @@ export class NetworkManager {
     const patterns = rules.map(r => ({ urlPattern: r.urlPattern, requestStage: 'Request' }));
     await this.cdp.sendToTarget(targetId, 'Fetch.enable', { patterns });
 
-    const fetchEntry = this.cdp.on('Fetch.requestPaused', async (params, sessionId) => {
+    const fetchEntry = this.cdp.onTarget('Fetch.requestPaused', targetId, async (params, sessionId) => {
       const url = params.request.url;
       const matchedRule = this.interceptRules.find(r => {
         const re = new RegExp(r.urlPattern.replace(/\*/g, '.*'), 'i');
@@ -191,7 +199,7 @@ export class NetworkManager {
       const remaining = [];
       for (const ev of events) {
         if (ev.method === 'Fetch.requestPaused') {
-          this.cdp.off(ev.method, ev.entry);
+          this.cdp.offTarget(ev.method, targetId, ev.entry);
         } else {
           remaining.push(ev);
         }
@@ -214,6 +222,7 @@ export class NetworkManager {
 
     const beginEntry = this.cdp.on('Browser.downloadWillBegin', (params) => {
       this.downloads.set(params.guid, {
+        frameId: params.frameId,
         url: params.url,
         filename: params.suggestedFilename,
         state: 'inProgress',
@@ -228,7 +237,7 @@ export class NetworkManager {
         dl.received = params.receivedBytes;
         dl.total = params.totalBytes;
         if (params.state === 'completed') {
-          dl.path = path.join(this.downloadDir, dl.filename || params.guid);
+          dl.path = params.filePath || path.join(this.downloadDir, params.guid);
           dl.completed = Date.now();
         }
       }

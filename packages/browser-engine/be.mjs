@@ -20,14 +20,26 @@
 //   node be.mjs closeAll
 
 import http from 'node:http';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { inspectBrowserEndpoint } from './browsers.mjs';
 
-const BASE = 'http://127.0.0.1:3456';
-const [cmd, ...rest] = process.argv.slice(2);
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const BASE = process.env.ENGINE_URL || 'http://127.0.0.1:3456';
+const argv = process.argv.slice(2);
+const bi = argv.indexOf('--browser');
+const browser = bi >= 0 ? argv.splice(bi, 2)[1] : process.env.ENGINE_BROWSER || 'edge';
+const [cmd, ...rest] = argv;
+function route(path) { return BASE + path + (path.includes('?') ? '&' : '?') + 'browser=' + encodeURIComponent(browser); }
 
 if (!cmd || cmd === 'help' || cmd === '-h' || cmd === '--help') {
   console.log(`
 Browser Engine CLI
 ==================
+  --browser edge|chrome  Select an existing browser (default: edge)
+  preflight           Check DevToolsActivePort and :3456 connection status
+  reconnect           Force reconnect to the selected browser
+  open <url>          Reuse existing site tab; nav explicitly to change its URL
   health              Check engine status
   tabs                List all tabs
   new <url>           Create new tab
@@ -74,31 +86,34 @@ Browser Engine CLI
 }
 
 // --- HTTP helpers ---
-function get(path) {
+function get(reqPath) {
   return new Promise((resolve, reject) => {
-    http.get(BASE + path, { timeout: 60000 }, (r) => {
-      let d = '';
-      r.on('data', c => d += c);
-      r.on('end', () => {
-        try { resolve(JSON.parse(d)); } catch { resolve(d); }
-      });
-    }).on('error', reject);
-  });
-}
-
-function post(path, data) {
-  return new Promise((resolve, reject) => {
-    const body = typeof data === 'string' ? data : JSON.stringify(data);
-    const isJSON = typeof data !== 'string';
-    const headers = { 'Content-Length': Buffer.byteLength(body) };
-    if (isJSON) headers['Content-Type'] = 'application/json';
-    const req = http.request(BASE + path, { method: 'POST', headers, timeout: 60000 }, (r) => {
+    const req = http.get(route(reqPath), { timeout: 60000 }, (r) => {
       let d = '';
       r.on('data', c => d += c);
       r.on('end', () => {
         try { resolve(JSON.parse(d)); } catch { resolve(d); }
       });
     });
+    req.on('timeout', () => req.destroy(new Error(`Request timeout: GET ${reqPath}`)));
+    req.on('error', reject);
+  });
+}
+
+function post(reqPath, data) {
+  return new Promise((resolve, reject) => {
+    const body = typeof data === 'string' ? data : JSON.stringify(data);
+    const isJSON = typeof data !== 'string';
+    const headers = { 'Content-Length': Buffer.byteLength(body) };
+    if (isJSON) headers['Content-Type'] = 'application/json';
+    const req = http.request(route(reqPath), { method: 'POST', headers, timeout: 60000 }, (r) => {
+      let d = '';
+      r.on('data', c => d += c);
+      r.on('end', () => {
+        try { resolve(JSON.parse(d)); } catch { resolve(d); }
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error(`Request timeout: POST ${reqPath}`)));
     req.on('error', reject);
     req.write(body);
     req.end();
@@ -129,6 +144,38 @@ async function resolveTarget(id) {
 async function main() {
   try {
     switch (cmd) {
+      case 'preflight': case 'check': {
+        const endpoint = inspectBrowserEndpoint(browser);
+        let service = null;
+        let serviceError = null;
+        try {
+          const res = await fetch(`${BASE}/health?browser=${encodeURIComponent(browser)}`, { signal: AbortSignal.timeout(2000) });
+          service = await res.json();
+        } catch (e) {
+          serviceError = e?.cause?.code === 'ECONNREFUSED' ? 'service_not_running' : (e?.message || 'unreachable');
+        }
+        out({
+          browser,
+          engineUrl: BASE,
+          endpoint,
+          serviceRunning: Boolean(service),
+          service: service ? {
+            status: service.status,
+            connected: service.connected,
+            connectionState: service.connectionState,
+            browserPort: service.browserPort,
+            managedTabs: service.managedTabs,
+          } : null,
+          serviceError,
+          ready: Boolean(endpoint.ok && service?.connected),
+        });
+        if (!endpoint.ok) process.exitCode = 1;
+        return;
+      }
+
+      case 'reconnect':
+        return out(await post('/reconnect', {}));
+
       case 'health': case 'h':
         return out(await get('/health'));
 
@@ -144,7 +191,8 @@ async function main() {
         return;
       }
 
-      case 'new': case 'open': {
+      case 'open': return out(await get('/tabs/open?url=' + encodeURIComponent(rest[0])));
+      case 'new': {
         const url = rest[0] || 'about:blank';
         return out(await get(`/tabs/new?url=${encodeURIComponent(url)}`));
       }
@@ -247,7 +295,7 @@ async function main() {
 
       case 'shot': case 'ss': {
         const id = await resolveTarget(rest[0]);
-        const file = rest[1] || `E:/study/browser-shot-${Date.now()}.png`;
+        const file = rest[1] || path.join(projectRoot, 'work', 'screenshots', `shot-${Date.now()}.png`);
         return out(await post(`/screenshot?target=${id}`, { file }));
       }
 

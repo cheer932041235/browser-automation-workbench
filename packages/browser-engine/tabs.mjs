@@ -28,6 +28,40 @@ export class TabManager {
     }));
   }
 
+  async open(url) {
+    const all = await this.listAll();
+    const requested = new URL(url);
+    const sameSite = all.filter(tab => {
+      try { return new URL(tab.url).origin === requested.origin; } catch { return false; }
+    });
+    const existing = all.find(tab => tab.url === url) || (sameSite.length === 1 ? sameSite[0] : null);
+    if (existing) return { ...existing, reused: true };
+    if (sameSite.length > 1) throw new Error('Multiple tabs on this site; select a target from /tabs instead of creating another tab.');
+    const targetId = await this.create(url);
+    return { targetId, url, reused: false };
+  }
+
+  async openExact(url) {
+    url=new URL(url).href;
+    const existing = (await this.listAll()).find(tab => tab.url === url);
+    if (existing) return { ...existing, reused: true };
+    const targetId = await this.create(url);
+    return { targetId, url, reused: false };
+  }
+
+  async requirePage(targetId) {
+    const page = (await this.listAll()).find(tab => tab.targetId === targetId);
+    if (!page) throw Object.assign(new Error('当前浏览器中不存在该页面：' + targetId),
+      { code: 'PAGE_NOT_FOUND', targetId, browser: this.cdp.browser, outcome: 'not_sent' });
+    return page;
+  }
+
+  async inspect(targetId) {
+    await this.requirePage(targetId);
+    return { browser: this.cdp.browser, targetId, connected: Boolean(this.cdp.connected),
+             state: 'readable', ...await this.getInfo(targetId) };
+  }
+
   async create(url = 'about:blank', group = 'default') {
     const resp = await this.cdp.send('Target.createTarget', { url, background: true });
     const targetId = resp.result.targetId;
@@ -37,7 +71,7 @@ export class TabManager {
     // 等待加载
     if (url !== 'about:blank') {
       try {
-        await this.waitForLoad(targetId);
+        await this.waitForLoad(targetId, 20000, url);
         // 更新标题
         const info = await this.getInfo(targetId);
         const entry = this.managedTabs.get(targetId);
@@ -76,7 +110,7 @@ export class TabManager {
 
   async navigate(targetId, url) {
     const resp = await this.cdp.sendToTarget(targetId, 'Page.navigate', { url });
-    await this.waitForLoad(targetId);
+    await this.waitForLoad(targetId, 20000, url);
     const entry = this.managedTabs.get(targetId);
     if (entry) { entry.url = url; entry.lastAccessed = Date.now(); }
     return resp.result;
@@ -102,23 +136,46 @@ export class TabManager {
       expression: 'JSON.stringify({title:document.title,url:location.href,ready:document.readyState,scroll:{x:window.scrollX,y:window.scrollY},size:{w:document.documentElement.scrollWidth,h:document.documentElement.scrollHeight,vw:window.innerWidth,vh:window.innerHeight}})',
       returnByValue: true,
     });
-    try { return JSON.parse(resp.result?.result?.value || '{}'); } catch { return {}; }
+    if (resp.result?.exceptionDetails || !resp.result?.result?.value) {
+      throw Object.assign(new Error('页面存在，但无法读取当前文档：' + targetId), {code:'PAGE_UNREADABLE', targetId});
+    }
+    return JSON.parse(resp.result.result.value);
   }
 
-  async waitForLoad(targetId, timeoutMs = 20000) {
+  async waitForLoad(targetId, timeoutMs = 20000, requestedUrl) {
     try { await this.cdp.sendToTarget(targetId, 'Page.enable', {}); } catch {}
     return new Promise((resolve) => {
       let resolved = false;
-      const done = (r) => { if (resolved) return; resolved = true; clearTimeout(timer); clearInterval(ci); resolve(r); };
-      const timer = setTimeout(() => done('timeout'), timeoutMs);
-      const ci = setInterval(async () => {
+      let inFlight = false;
+      let timer, initTimer, ci, loadListener;
+      const done = (r) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timer);
+        clearTimeout(initTimer);
+        clearInterval(ci);
+        if (loadListener) this.cdp.offTarget('Page.loadEventFired', targetId, loadListener);
+        resolve(r);
+      };
+      const checkExpr = requestedUrl && requestedUrl !== 'about:blank'
+        ? "location.href==='about:blank'?'loading':document.readyState"
+        : 'document.readyState';
+      const probe = async () => {
+        if (resolved || inFlight) return;
+        inFlight = true;
         try {
           const r = await this.cdp.sendToTarget(targetId, 'Runtime.evaluate', {
-            expression: 'document.readyState', returnByValue: true
+            expression: checkExpr,
+            returnByValue: true,
           });
           if (r.result?.result?.value === 'complete') done('complete');
         } catch { /* ignore */ }
-      }, 400);
+        finally { inFlight = false; }
+      };
+      loadListener = this.cdp.onTarget('Page.loadEventFired', targetId, () => { void probe(); });
+      timer = setTimeout(() => done('timeout'), timeoutMs);
+      initTimer = setTimeout(() => { void probe(); }, requestedUrl && requestedUrl !== 'about:blank' ? 40 : 0);
+      ci = setInterval(() => { void probe(); }, 150);
     });
   }
 

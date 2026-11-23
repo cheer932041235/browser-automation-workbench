@@ -2,11 +2,8 @@
 // Browser Engine Core - CDP 连接与命令层
 // 连接 Edge/Chrome 浏览器的远程调试端口
 
-import net from 'node:net';
-import fs from 'node:fs';
-import path from 'node:path';
-import os from 'node:os';
 import http from 'node:http';
+import { defaultBrowser, readBrowserEndpoint } from './browsers.mjs';
 
 // --- WebSocket 兼容层 ---
 let WS;
@@ -20,11 +17,18 @@ if (typeof globalThis.WebSocket !== 'undefined') {
 }
 
 export class CDPConnection {
-  constructor() {
+  constructor({ browser = defaultBrowser, userDataDir, endpoint, connectTimeout=300000, WebSocket: CustomWS } = {}) {
+    this.browser = browser;
+    this.userDataDir = userDataDir;
+    this.endpoint = endpoint;
+    this.connectTimeout=connectTimeout;
+    this._WS = CustomWS || WS;
     this.ws = null;
     this.cmdId = 0;
     this.pending = new Map();
     this.sessions = new Map();
+    this.targetParents = new Map();
+    this.targetInfo = new Map();
     this.eventHandlers = new Map();  // method -> Set<{handler, once}>
     this.targetHandlers = new Map(); // `${method}:${targetId}` -> Set<{handler, once}>
     this.port = null;
@@ -32,7 +36,9 @@ export class CDPConnection {
     this.connectingPromise = null;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
-    this.autoReconnect = true;
+    this.autoReconnect = false;
+    this._everConnected = false;
+    this._reconnectTimer = null;
     this._specifiedPort = null;
     this._onReconnectCallbacks = [];
   }
@@ -42,158 +48,49 @@ export class CDPConnection {
 
   // 自动发现浏览器调试端口
   async discoverPort() {
-    const platform = os.platform();
-    const paths = [];
-
-    if (platform === 'win32') {
-      const localAppData = process.env.LOCALAPPDATA || '';
-      paths.push(
-        path.join(localAppData, 'Microsoft/Edge/User Data/DevToolsActivePort'),
-        path.join(localAppData, 'Google/Chrome/User Data/DevToolsActivePort'),
-      );
-    } else if (platform === 'darwin') {
-      const home = os.homedir();
-      paths.push(
-        path.join(home, 'Library/Application Support/Microsoft Edge/DevToolsActivePort'),
-        path.join(home, 'Library/Application Support/Google/Chrome/DevToolsActivePort'),
-      );
-    } else {
-      const home = os.homedir();
-      paths.push(
-        path.join(home, '.config/microsoft-edge/DevToolsActivePort'),
-        path.join(home, '.config/google-chrome/DevToolsActivePort'),
-      );
-    }
-
-    for (const p of paths) {
-      try {
-        const content = fs.readFileSync(p, 'utf-8').trim();
-        const lines = content.split('\n');
-        const port = parseInt(lines[0]);
-        if (port > 0 && port < 65536 && await this.checkPort(port)) {
-          const wsPath = lines[1] || null;
-          if (wsPath) {
-            // 信任 DevToolsActivePort 文件（跳过 WebSocket 预检，连接时验证）
-            console.log(`[Engine] 从 DevToolsActivePort 发现端口: ${port} (${p.includes('Edge') ? 'Edge' : 'Chrome'})`);
-            return { port, wsPath };
-          }
-        }
-      } catch { /* continue */ }
-    }
-
-    // 扫描常见端口
-    const commonPorts = [59888, 9222, 9229, 9333];
-    for (const port of commonPorts) {
-      const wsUrl = await this.resolveBrowserWebSocket(port);
-      if (wsUrl && await this.checkWebSocket(wsUrl)) {
-        console.log(`[Engine] 扫描发现调试端口: ${port}`);
-        return { port, wsPath: null };
-      }
-    }
-    return null;
-  }
-
-  checkPort(port) {
-    return new Promise((resolve) => {
-      const socket = net.createConnection(port, '127.0.0.1');
-      const timer = setTimeout(() => { socket.destroy(); resolve(false); }, 2000);
-      socket.once('connect', () => { clearTimeout(timer); socket.destroy(); resolve(true); });
-      socket.once('error', () => { clearTimeout(timer); resolve(false); });
-    });
-  }
-
-  async resolveBrowserWebSocket(port) {
-    try {
-      const versionInfo = await this.httpGet(`http://127.0.0.1:${port}/json/version`);
-      const info = JSON.parse(versionInfo);
-      return info.webSocketDebuggerUrl || null;
-    } catch {
-      return null;
-    }
-  }
-
-  checkWebSocket(url, timeout = 3000) {
-    return new Promise((resolve) => {
-      let settled = false;
-      const ws = new WS(url);
-      const done = (ok) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        try { ws.close(); } catch {}
-        resolve(ok);
-      };
-      const timer = setTimeout(() => done(false), timeout);
-      if (ws.on) {
-        ws.on('open', () => done(true));
-        ws.on('error', () => done(false));
-      } else {
-        ws.addEventListener('open', () => done(true));
-        ws.addEventListener('error', () => done(false));
-      }
-    });
+    return readBrowserEndpoint(this.browser, this.userDataDir);
   }
 
   async connect(specifiedPort = null) {
-    if (this.ws && (this.ws.readyState === WS.OPEN || this.ws.readyState === 1)) return;
+    if (this.ws && (this.ws.readyState === this._WS.OPEN || this.ws.readyState === 1)) return;
     if (this.connectingPromise) return this.connectingPromise;
+    if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
+    this._specifiedPort = specifiedPort;
 
-    if (specifiedPort) this._specifiedPort = specifiedPort;
-    if (specifiedPort && !this.port) {
-      // 指定了端口但还没发现 wsPath，尝试读 DevToolsActivePort
-      const discovered = await this.discoverPort();
-      if (discovered && discovered.port === specifiedPort) {
-        this.port = discovered.port;
-        this.wsPath = discovered.wsPath;
-      } else {
-        this.port = specifiedPort;
-        this.wsPath = null;
+    let wsUrl = this.endpoint;
+    if (!wsUrl) {
+      const discovered = readBrowserEndpoint(this.browser, this.userDataDir);
+      if (specifiedPort && Number(specifiedPort) !== discovered.port) {
+        throw new Error(`${this.browser}: selected port ${specifiedPort} does not match its profile port ${discovered.port}`);
       }
-    } else if (!this.port) {
-      const discovered = await this.discoverPort();
-      if (!discovered) throw new Error('未发现浏览器调试端口。请确认 Edge 已开启远程调试。');
       this.port = discovered.port;
       this.wsPath = discovered.wsPath;
-    }
-
-    // 获取 WebSocket URL — 优先 HTTP 发现（最新），DevToolsActivePort 作备选
-    let wsUrl;
-    try {
-      const versionInfo = await this.httpGet(`http://127.0.0.1:${this.port}/json/version`);
-      const info = JSON.parse(versionInfo);
-      wsUrl = info.webSocketDebuggerUrl;
-      console.log(`[Engine] 浏览器: ${info.Browser || 'unknown'}`);
-    } catch {
-      if (this.wsPath) {
-        wsUrl = `ws://127.0.0.1:${this.port}${this.wsPath}`;
-        console.log(`[Engine] HTTP 不可用，使用 DevToolsActivePort 路径`);
-      } else {
-        wsUrl = `ws://127.0.0.1:${this.port}/devtools/browser`;
-        console.log(`[Engine] HTTP 发现失败，尝试通用 WebSocket 路径`);
-      }
+      wsUrl = `ws://127.0.0.1:${this.port}${this.wsPath}`;
     }
 
     return this.connectingPromise = new Promise((resolve, reject) => {
       let settled = false;
       let shouldReconnect = true;
-      this.ws = new WS(wsUrl);
-      const wasReconnect = this.reconnectAttempts > 0;
+      const socket = new this._WS(wsUrl);
+      this.ws = socket;
+      const wasReconnect = this._everConnected;
       const connectTimer = setTimeout(() => {
         if (settled) return;
         settled = true;
         shouldReconnect = false;
         this.connectingPromise = null;
-        try { this.ws?.close?.(); } catch {}
+        try { socket.close(); } catch {}
         this.ws = null;
         this.port = null;
         this.wsPath = null;
-        reject(new Error(`连接浏览器超时: ${wsUrl}`));
-      }, 5000);
+        reject(new Error(`${this.browser}: 等待现有浏览器连接超时；请检查远程调试授权。未切换浏览器或新建窗口。`));
+      }, this.connectTimeout);
       const onOpen = () => {
         if (settled) return;
         settled = true;
         clearTimeout(connectTimer);
         this.connectingPromise = null;
+        this._everConnected = true;
         this.reconnectAttempts = 0;
         console.log(`[Engine] 已连接浏览器 (端口 ${this.port})`);
         if (wasReconnect) {
@@ -208,43 +105,71 @@ export class CDPConnection {
         shouldReconnect = false;
         clearTimeout(connectTimer);
         this.connectingPromise = null;
+        const failedPort = this.port;
         this.ws = null;
         this.port = null;
         this.wsPath = null;
-        reject(new Error(e.message || '连接失败'));
+        const detail = e?.message || `无法连接 ${this.browser} 调试端口 ${failedPort || '(未知)'}`;
+        reject(new Error(`${this.browser}: ${detail}；请检查 ${this.browser} 是否运行并已开启远程调试。`));
       };
       const onClose = () => {
+        if (this.ws && this.ws !== socket) return;
         console.log('[Engine] 连接断开');
         this.ws = null;
         this.sessions.clear();
+        this.targetParents.clear();
+        this.targetInfo.clear();
         if (!settled) {
           settled = true;
           clearTimeout(connectTimer);
           this.connectingPromise = null;
+          reject(new Error(`${this.browser}: connection closed before authorization`));
         }
+        for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(Object.assign(new Error('Browser connection closed; inspect the action outcome'),{code:'CDP_DISCONNECTED',outcome:'unknown'})); }
+        this.pending.clear();
         // 自动重连
         if (shouldReconnect && this.autoReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
           this.reconnectAttempts++;
           const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 15000);
           console.log(`[Engine] ${delay}ms 后尝试重连 (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-          setTimeout(() => {
+          this._reconnectTimer = setTimeout(() => {
+            this._reconnectTimer = null;
             this.connect(this._specifiedPort).catch(e => {
               console.error('[Engine] 重连失败:', e.message);
             });
           }, delay);
+          this._reconnectTimer.unref?.();
         }
       };
       const onMessage = (evt) => {
         const data = typeof evt === 'string' ? evt : (evt.data || evt);
         const msg = JSON.parse(typeof data === 'string' ? data : data.toString());
         if (msg.method === 'Target.attachedToTarget') {
+          const parent = [...this.sessions].find(([,sid]) => sid === msg.sessionId)?.[0];
+          if (parent) this.targetParents.set(msg.params.targetInfo.targetId, parent);
+          this.targetInfo.set(msg.params.targetInfo.targetId, msg.params.targetInfo);
           this.sessions.set(msg.params.targetInfo.targetId, msg.params.sessionId);
         }
+        if (msg.method === 'Target.detachedFromTarget') {
+          for (const [targetId, sessionId] of this.sessions) {
+            if (sessionId === msg.params.sessionId) {
+              this.sessions.delete(targetId);
+              this.targetParents.delete(targetId);
+              this.targetInfo.delete(targetId);
+            }
+          }
+        }
+        if (msg.method === 'Target.targetDestroyed') {
+          this.sessions.delete(msg.params.targetId);
+          this.targetParents.delete(msg.params.targetId);
+          this.targetInfo.delete(msg.params.targetId);
+        }
         if (msg.id && this.pending.has(msg.id)) {
-          const { resolve, timer } = this.pending.get(msg.id);
+          const { resolve, reject, timer } = this.pending.get(msg.id);
           clearTimeout(timer);
           this.pending.delete(msg.id);
-          resolve(msg);
+          if (msg.error) reject(new Error(`CDP ${msg.error.code}: ${msg.error.message}`));
+          else resolve(msg);
         }
         // 触发全局事件处理器
         if (msg.method) {
@@ -295,28 +220,35 @@ export class CDPConnection {
 
   httpGet(url) {
     return new Promise((resolve, reject) => {
-      http.get(url, { timeout: 3000 }, (res) => {
+      const req = http.get(url, { timeout: 3000 }, (res) => {
         let d = '';
         res.on('data', c => d += c);
-        res.on('end', () => resolve(d));
+        res.on('end', () => res.statusCode === 200 ? resolve(d) : reject(new Error(`HTTP ${res.statusCode}`)));
       }).on('error', reject);
+      req.on('timeout', () => req.destroy(new Error('HTTP discovery timeout')));
     });
   }
 
   send(method, params = {}, sessionId = null, timeout = 30000) {
     return new Promise((resolve, reject) => {
       if (!this.ws || (this.ws.readyState !== WS.OPEN && this.ws.readyState !== 1)) {
-        return reject(new Error('WebSocket 未连接'));
+        return reject(Object.assign(new Error('WebSocket 未连接'),{code:'CDP_DISCONNECTED',outcome:'not_sent'}));
       }
       const id = ++this.cmdId;
       const msg = { id, method, params };
       if (sessionId) msg.sessionId = sessionId;
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`CDP 超时: ${method} (${timeout}ms)`));
+        reject(Object.assign(new Error(`CDP 超时: ${method} (${timeout}ms); 检查实际结果后再决定下一步`),
+          { code: 'CDP_TIMEOUT', method, outcome: 'unknown' }));
       }, timeout);
-      this.pending.set(id, { resolve, timer });
-      this.ws.send(JSON.stringify(msg));
+      this.pending.set(id, { resolve, reject, timer });
+      try { this.ws.send(JSON.stringify(msg)); }
+      catch (error) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(error);
+      }
     });
   }
 
@@ -400,35 +332,22 @@ export class CDPConnection {
     throw new Error('attach 失败: ' + JSON.stringify(resp.error));
   }
 
-  // 带自动重试的 session 命令执行
+  // A timeout can mean the page already acted. Never replay a command implicitly.
   async sendToTarget(targetId, method, params = {}, timeout = 30000) {
-    const attempt = async (retry) => {
-      const sid = await this.ensureSession(targetId, retry);
-      const resp = await this.send(method, params, sid, timeout);
-      if (resp.error) {
-        // session 失效类错误，重试一次
-        if (!retry && (resp.error.message?.includes('not found') ||
-            resp.error.message?.includes('detached') ||
-            resp.error.code === -32001 || resp.error.code === -32602)) {
-          return attempt(true);
-        }
-        throw new Error(resp.error.message || JSON.stringify(resp.error));
-      }
-      return resp;
-    };
+    const sid = await this.ensureSession(targetId);
     try {
-      return await attempt(false);
-    } catch (e) {
-      // 超时或其他错误，尝试重新 attach 一次
-      if (e.message?.includes('超时') || e.message?.includes('timeout')) {
-        try { return await attempt(true); } catch { /* throw original */ }
+      return await this.send(method, params, sid, timeout);
+    } catch (error) {
+      if (/Session with given id not found|Target closed|No target with given id/i.test(error.message || '')) {
+        this.sessions.delete(targetId);
+        error.outcome = 'not_sent';
       }
-      throw e;
+      throw error;
     }
   }
 
   get connected() {
-    return this.ws && (this.ws.readyState === WS.OPEN || this.ws.readyState === 1);
+    return Boolean(this.ws && (this.ws.readyState === (this._WS?.OPEN ?? 1) || this.ws.readyState === 1));
   }
 }
 

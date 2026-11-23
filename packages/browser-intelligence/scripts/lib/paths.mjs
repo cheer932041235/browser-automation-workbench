@@ -39,6 +39,22 @@ function ensureTracesDir() {
   return tracesDir;
 }
 
+function safeTaskId(taskId) {
+  return String(taskId || '').trim().replace(/[^a-zA-Z0-9._-]/g, '-');
+}
+
+function resolveTraceTaskDir(taskId) {
+  const safe = safeTaskId(taskId);
+  const direct = path.join(tracesDir, safe);
+  if (fs.existsSync(direct)) return { taskId: safe, taskDir: direct };
+  const trimmed = safe.replace(/^-+|-+$/g, '');
+  if (trimmed) {
+    const alt = path.join(tracesDir, trimmed);
+    if (fs.existsSync(alt)) return { taskId: trimmed, taskDir: alt };
+  }
+  return { taskId: safe || trimmed, taskDir: direct };
+}
+
 function exists(targetPath) {
   return fs.existsSync(targetPath);
 }
@@ -54,6 +70,8 @@ export {
   tracesDir,
   recordingStateFile,
   docMap,
+  safeTaskId,
+  resolveTraceTaskDir,
   ensureLogsDir,
   ensureTracesDir,
   exists,

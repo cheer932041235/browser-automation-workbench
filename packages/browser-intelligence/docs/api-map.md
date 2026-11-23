@@ -13,7 +13,8 @@ curl -s http://127.0.0.1:3456/help
 或阅读：
 
 ```text
-packages/browser-engine/SKILL.md
+docs/browser-engine.md
+packages/browser-engine/README.md
 ```
 
 ## 能力映射

@@ -79,8 +79,9 @@ export class Interactor {
   // --- JS 层点击 ---
   async click(targetId, selector) {
     const js = `(() => {
-      const el = document.querySelector(${JSON.stringify(selector)});
-      if (!el) return { error: '未找到元素: ' + ${JSON.stringify(selector)} };
+      const matches = [...document.querySelectorAll(${JSON.stringify(selector)})].filter(el=>el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
+      if(matches.length !== 1) return {error:'Expected exactly one visible click target; found '+matches.length};
+      const el = matches[0];
       el.scrollIntoView({ block: 'center', behavior: 'instant' });
       el.click();
       return { clicked: true, tag: el.tagName, text: (el.textContent || '').slice(0, 120) };
@@ -109,6 +110,7 @@ export class Interactor {
 
   // --- CDP 真实鼠标点击（触发用户手势） ---
   async clickAt(targetId, selector) {
+    if (this.isHiddenDesktop?.()) return this.click(targetId, selector);
     const coordJs = `(() => {
       const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) return { error: '未找到元素: ' + ${JSON.stringify(selector)} };
@@ -119,8 +121,8 @@ export class Interactor {
     const coordResp = await this.eval(targetId, coordJs);
     if (coordResp.value?.error) return coordResp.value;
     const { x, y, tag } = coordResp.value;
-    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
-    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 }, 5000);
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }, 5000);
     return { clicked: true, x, y, tag };
   }
 
@@ -128,8 +130,8 @@ export class Interactor {
   async clickXY(targetId, x, y, opts = {}) {
     const button = opts.button || 'left';
     const clickCount = opts.double ? 2 : 1;
-    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button, clickCount });
-    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button, clickCount });
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button, clickCount }, 5000);
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button, clickCount }, 5000);
     return { clicked: true, x, y };
   }
 
@@ -145,10 +147,10 @@ export class Interactor {
     const coordResp = await this.eval(targetId, coordJs);
     if (coordResp.value?.error) return coordResp.value;
     const { x, y, tag } = coordResp.value;
-    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
-    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
-    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 2 });
-    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 2 });
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 }, 5000);
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }, 5000);
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 2 }, 5000);
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 2 }, 5000);
     return { doubleClicked: true, x, y, tag };
   }
 
@@ -164,8 +166,8 @@ export class Interactor {
     const coordResp = await this.eval(targetId, coordJs);
     if (coordResp.value?.error) return coordResp.value;
     const { x, y, tag } = coordResp.value;
-    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'right', clickCount: 1 });
-    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'right', clickCount: 1 });
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'right', clickCount: 1 }, 5000);
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'right', clickCount: 1 }, 5000);
     return { rightClicked: true, x, y, tag };
   }
 
@@ -214,7 +216,8 @@ export class Interactor {
   }
 
   // --- 快速填充（直接设值，不逐字符） ---
-  async fill(targetId, selector, value) {
+  async fill(targetId, selector, value, opts = {}) {
+    const sensitive = Boolean(opts.sensitive);
     const js = `(() => {
       const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) return { error: '未找到元素: ' + ${JSON.stringify(selector)} };
@@ -229,7 +232,8 @@ export class Interactor {
       else el.value = ${JSON.stringify(value)};
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
-      return { filled: true, tag: el.tagName, value: el.value.slice(0, 100) };
+      const redact = ${sensitive} || el.type === 'password' || el.autocomplete === 'one-time-code';
+      return { filled: true, tag: el.tagName, value: redact ? '[REDACTED]' : el.value.slice(0, 100) };
     })()`;
     return this.eval(targetId, js);
   }
@@ -366,7 +370,7 @@ export class Interactor {
     })()`;
     const r = await this.eval(targetId, coordJs);
     if (r.value?.error) return r.value;
-    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.value.x, y: r.value.y });
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.value.x, y: r.value.y }, 5000);
     return { hovered: true, ...r.value };
   }
 
@@ -519,9 +523,9 @@ export class Interactor {
     const r = await this.eval(targetId, coordJs);
     if (r.value?.error) return r.value;
     const { x1, y1, x2, y2 } = r.value;
-    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x: x1, y: y1, button: 'left' });
-    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: x2, y: y2, button: 'left' });
-    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x: x2, y: y2, button: 'left' });
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x: x1, y: y1, button: 'left' }, 5000);
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: x2, y: y2, button: 'left' }, 5000);
+    await this.cdp.sendToTarget(targetId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x: x2, y: y2, button: 'left' }, 5000);
     return { dragged: true };
   }
 }

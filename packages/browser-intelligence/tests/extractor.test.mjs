@@ -23,6 +23,8 @@ const {
   scoreHangzhouRelevance,
   isXhsFeedPage,
   parseXhsFeedText,
+  CATEGORY_RULES,
+  HANGZHOU_KEYWORDS,
 } = await import('../scripts/lib/extractor.mjs');
 
 process.on('exit', () => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
@@ -576,5 +578,13 @@ describe('extractContent integration', () => {
 
   test('throws for non-existent task', () => {
     assert.throws(() => extractContent('does-not-exist-xyz'), /not found/);
+  });
+
+  test('normalizes Hangzhou ChunAn keyword and unique category keywords', () => {
+    assert.equal(HANGZHOU_KEYWORDS.includes('淳安'), true);
+    assert.equal(HANGZHOU_KEYWORDS.includes('淣安'), false);
+    for (const rule of CATEGORY_RULES) {
+      assert.equal(new Set(rule.keywords).size, rule.keywords.length, `duplicate keyword in ${rule.name}`);
+    }
   });
 });

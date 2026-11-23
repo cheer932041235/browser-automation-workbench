@@ -10,7 +10,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { tracesDir } from './paths.mjs';
+import { resolveTraceTaskDir } from './paths.mjs';
 
 // ---------------------------------------------------------------------------
 // Platform detection
@@ -56,7 +56,8 @@ function loadTrace(taskDir) {
 function loadNetwork(taskDir) {
   const file = path.join(taskDir, 'network.json');
   if (!fs.existsSync(file)) return [];
-  return JSON.parse(fs.readFileSync(file, 'utf-8'));
+  const parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
+  return Array.isArray(parsed) ? parsed : [];
 }
 
 function loadPages(taskDir) {
@@ -434,7 +435,7 @@ function scorePost(post) {
 
 const CATEGORY_RULES = [
   { name: 'exhibition',  label: '展览',   keywords: ['展览', '展出', '美术馆', '博物馆', '画展', '艺术展', '开展', '闭展', '特展', '常设展', '临展', '参观', '美院'] },
-  { name: 'event',       label: '活动',   keywords: ['活动', '市集', '市集', '音乐节', '演出', '嘉年华', '节日', '庆典', '开幕', '报名', '报名链接', '招募', '志愿者'] },
+  { name: 'event',       label: '活动',   keywords: ['活动', '市集', '音乐节', '演出', '嘉年华', '节日', '庆典', '开幕', '报名', '报名链接', '招募', '志愿者'] },
   { name: 'food',        label: '美食',   keywords: ['美食', '餐厅', '探店', '吃饭', '小吃', '咖啡', '甜品', '火锅', '烧烤', '下午茶', '早餐', '晚餐', '拔草', '排雷', '好吃'] },
   { name: 'social',      label: '社交',   keywords: ['社交', '组局', '拼玩', '约伴', '拼饭', '来聊天', '朋友', '共创', '互助', '联谊', '美妆沙龙', '读书会'] },
   { name: 'resource',    label: '资源',   keywords: ['免费', '羊毛', '红利', '福利', '优惠', '折扣', '补贴', '赠送', '兑换', '试用', '领取', '资源', '工具', '分享'] },
@@ -509,7 +510,7 @@ function detectTimeliness(post) {
 // ---------------------------------------------------------------------------
 
 const HANGZHOU_KEYWORDS = [
-  '杭州', '西湖', '滨江', '余杭', '萧山', '临平', '临安', '富阳', '桐庐', '建德', '淣安',
+  '杭州', '西湖', '滨江', '余杭', '萧山', '临平', '临安', '富阳', '桐庐', '建德', '淳安',
   '钱塘', '江干', '拱墅', '下城', '上城', '江城', '北山', '神湾',
   '浙大', '浙江大学', '之江', '浙江省博', '浙江美术馆', '良渚',
   '西溪湿地', '天目里', '河坊', '南宋御街', '湖滨银泰',
@@ -647,8 +648,7 @@ function generateExtractReport(extraction) {
 // ---------------------------------------------------------------------------
 
 function extractContent(taskId) {
-  const safeName = taskId.replace(/[^a-zA-Z0-9._-]/g, '-').replace(/^-+|-+$/g, '');
-  const taskDir = path.join(tracesDir, safeName);
+  const { taskId: safeName, taskDir } = resolveTraceTaskDir(taskId);
 
   if (!fs.existsSync(taskDir)) {
     throw new Error(`Task directory not found: ${taskDir}`);

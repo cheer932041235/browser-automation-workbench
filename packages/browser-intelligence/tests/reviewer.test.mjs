@@ -9,6 +9,7 @@ const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bi-review-test-'));
 process.env.BI_LOGS_DIR = tmpDir;
 
 const { reviewTrace, listTraces, classifyRequest, extractApiCandidates, computeTimeline, extractSelectors, generateRecommendation } = await import('../scripts/lib/reviewer.mjs');
+const recorderMod = await import('../scripts/lib/recorder.mjs');
 
 // Cleanup
 process.on('exit', () => { fs.rmSync(tmpDir, { recursive: true, force: true }); });
@@ -145,6 +146,19 @@ describe('reviewTrace integration', () => {
 
   test('throws for non-existent task', () => {
     assert.throws(() => reviewTrace('non-existent-task-xyz'), /not found/);
+  });
+
+  test('resolves non-ASCII task IDs consistently with recorder safeTaskId and tolerates non-array network.json', () => {
+    const { safeTaskId } = recorderMod;
+    const safeId = safeTaskId('杭州 活动/小红书');
+    const taskDir = path.join(tmpDir, 'traces', safeId);
+    fs.mkdirSync(taskDir, { recursive: true });
+    fs.writeFileSync(path.join(taskDir, 'trace.jsonl'), JSON.stringify({ time: '2026-05-19T10:00:00.000Z', type: 'start', url: 'https://example.com' }) + '\n');
+    fs.writeFileSync(path.join(taskDir, 'network.json'), JSON.stringify({ error: 'legacy missing target' }));
+    fs.writeFileSync(path.join(taskDir, 'pages.json'), JSON.stringify({ final: { info: { url: 'https://example.com' }, elements: [] }, navigation: [] }));
+    const res = reviewTrace('杭州 活动/小红书');
+    assert.equal(res.analysis.taskId, safeId);
+    assert.equal(res.analysis.apiCandidates.length, 0);
   });
 });
 

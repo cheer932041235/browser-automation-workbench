@@ -98,7 +98,7 @@ npm run check
 Current baseline:
 
 ```text
-76 pass / 0 fail / 19 suites
+78 pass / 0 fail / 19 suites
 ```
 
 ## Environment Variables

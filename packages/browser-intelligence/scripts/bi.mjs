@@ -126,7 +126,7 @@ function printDocs(name) {
   if (!name) {
     printTitle('Browser Intelligence Docs');
     for (const [key, file] of Object.entries(docMap)) {
-      if (['readme', 'guide', 'api', 'output'].includes(key)) continue;
+      if (['readme', 'guide', 'api', 'output', 'test'].includes(key)) continue;
       printKeyValue(key, file);
     }
     return;

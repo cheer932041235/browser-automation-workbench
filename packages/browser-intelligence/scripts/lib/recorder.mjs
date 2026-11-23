@@ -1,14 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { tracesDir, recordingStateFile, ensureLogsDir, ensureTracesDir } from './paths.mjs';
+import { tracesDir, recordingStateFile, safeTaskId, ensureLogsDir, ensureTracesDir } from './paths.mjs';
 import { getHealth, getJson, postJson } from './engine-client.mjs';
 
 function nowIso() {
   return new Date().toISOString();
-}
-
-function safeTaskId(taskId) {
-  return String(taskId || '').trim().replace(/[^a-zA-Z0-9._-]/g, '-');
 }
 
 function parseFlags(args) {
@@ -204,10 +200,16 @@ async function stopRecording(args) {
   const finalInfo = await safeCall(() => getJson(`/tabs/info?target=${target}`));
   const text = await safeCall(() => postJson(`/page/text?target=${target}`, { maxLength: Number(flags['max-text'] || 8000) }));
   const elements = await safeCall(() => postJson(`/page/elements?target=${target}`, { maxItems: Number(flags['max-elements'] || 80) }));
-  const network = await safeCall(() => postJson('/network/requests', { limit: Number(flags['max-network'] || 100) }));
+  const rawNetwork = await safeCall(() => postJson(`/network/requests?target=${target}`, { limit: Number(flags['max-network'] || 100) }));
+  const network = Array.isArray(rawNetwork) ? rawNetwork : [];
   const navHistory = await safeCall(() => getJson(`/nav/history?target=${target}`));
   const finalShot = await safeCall(() => postJson(`/autoshot/capture?target=${target}`, { action: 'record_stop' }));
   const shotHistory = await safeCall(() => getJson(`/autoshot/history?target=${target}&limit=50`));
+
+  // Stop active per-tab monitors so background tabs do not keep accumulating state
+  await safeCall(() => getJson(`/autoshot/disable?target=${target}`));
+  await safeCall(() => getJson(`/nav/disable?target=${target}`));
+  await safeCall(() => getJson(`/network/stop?target=${target}`));
 
   const pages = {
     final: {
@@ -220,7 +222,7 @@ async function stopRecording(args) {
   };
 
   writeJson(paths.pagesFile, pages);
-  writeJson(paths.networkFile, network || []);
+  writeJson(paths.networkFile, network);
 
   const summary = buildSummary(state, pages, network, paths);
   fs.writeFileSync(paths.summaryFile, summary, 'utf8');

@@ -17,13 +17,14 @@ export class NavigationTracker {
       consoleEnabled: opts.console !== false,
       networkEnabled: opts.network !== false,
       history: [],
+      entry: null,
     };
     this._tracked.set(targetId, state);
 
     await this.cdp.sendToTarget(targetId, 'Page.enable', {});
 
     // 监听 frameNavigated 事件
-    this.cdp.onTarget('Page.frameNavigated', targetId, async (params) => {
+    state.entry = this.cdp.onTarget('Page.frameNavigated', targetId, async (params) => {
       // 只关注主框架导航
       if (params.frame?.parentId) return;
 
@@ -49,9 +50,10 @@ export class NavigationTracker {
     return { enabled: true, console: state.consoleEnabled, network: state.networkEnabled };
   }
 
-  // 禁用
+  // 禁用（仅移除本模块注册的监听器）
   disable(targetId) {
-    this.cdp.offAllForTarget(targetId);
+    const state = this._tracked.get(targetId);
+    if (state?.entry) this.cdp.offTarget('Page.frameNavigated', targetId, state.entry);
     this._tracked.delete(targetId);
     return { disabled: true };
   }
@@ -69,12 +71,12 @@ export class NavigationTracker {
 
   // Tab 关闭清理
   onTargetClosed(targetId) {
-    this._tracked.delete(targetId);
+    this.disable(targetId);
   }
 
   // 重连重置
   resetState() {
-    this._tracked.clear();
+    for (const tid of [...this._tracked.keys()]) this.disable(tid);
   }
 }
 

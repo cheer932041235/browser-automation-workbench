@@ -22,37 +22,41 @@ export class SmartWaiter {
     // 事件驱动等待：同时监听 loadEventFired 和轮询 readyState
     return new Promise((resolve) => {
       let resolved = false;
+      let inFlight = false;
       let loadEntry, domEntry;
       const done = (state, method) => {
         if (resolved) return;
         resolved = true;
         clearTimeout(timer);
         clearInterval(fallback);
-        // 清理事件监听
-        if (loadEntry) this.cdp.off('Page.loadEventFired', loadEntry);
-        if (domEntry) this.cdp.off('Page.domContentEventFired', domEntry);
+        // 清理事件监听（仅移除当前 listener，避免影响其他模块）
+        if (loadEntry) this.cdp.offTarget('Page.loadEventFired', targetId, loadEntry);
+        if (domEntry) this.cdp.offTarget('Page.domContentEventFired', targetId, domEntry);
         resolve({ state, elapsed: Date.now() - start, method });
       };
 
       // 超时保底
       const timer = setTimeout(() => done('timeout', 'timeout'), timeoutMs);
 
-      // CDP 事件监听（最快路径）
-      loadEntry = this.cdp.on('Page.loadEventFired', () => done('complete', 'load-event'));
+      // CDP 事件监听（按 targetId 隔离）
+      loadEntry = this.cdp.onTarget('Page.loadEventFired', targetId, () => done('complete', 'load-event'));
 
       // DOMContentLoaded 作为中间信号
-      domEntry = this.cdp.on('Page.domContentEventFired', () => {
+      domEntry = this.cdp.onTarget('Page.domContentEventFired', targetId, () => {
         if (Date.now() - start > 5000) done('interactive', 'dom-content-loaded');
       });
 
       // 轮询保底（某些 SPA 不触发 load 事件）
       const fallback = setInterval(async () => {
+        if (inFlight || resolved) return;
+        inFlight = true;
         try {
           const r = await this.cdp.sendToTarget(targetId, 'Runtime.evaluate', {
             expression: 'document.readyState', returnByValue: true,
           });
           if (r.result?.result?.value === 'complete') done('complete', 'polling');
         } catch { /* ignore */ }
+        finally { inFlight = false; }
       }, 800);
     });
   }
@@ -71,31 +75,35 @@ export class SmartWaiter {
     return new Promise((resolve) => {
       let resolved = false;
       let navigated = false;
+      let inFlight = false;
       let navEntry, loadEntry;
       const done = (result) => {
         if (resolved) return;
         resolved = true;
         clearTimeout(timer);
         clearInterval(fallback);
-        if (navEntry) this.cdp.off('Page.frameNavigated', navEntry);
-        if (loadEntry) this.cdp.off('Page.loadEventFired', loadEntry);
+        if (navEntry) this.cdp.offTarget('Page.frameNavigated', targetId, navEntry);
+        if (loadEntry) this.cdp.offTarget('Page.loadEventFired', targetId, loadEntry);
         resolve({ ...result, elapsed: Date.now() - start });
       };
 
       const timer = setTimeout(() => done({ state: 'timeout' }), timeoutMs);
 
-      // 监听 frameNavigated
-      navEntry = this.cdp.on('Page.frameNavigated', (params) => {
+      // 监听主框架 frameNavigated（按 targetId 隔离，忽略子 iframe）
+      navEntry = this.cdp.onTarget('Page.frameNavigated', targetId, (params) => {
+        if (params.frame?.parentId) return;
         if (params.frame?.url && params.frame.url !== startUrl) navigated = true;
       });
 
       // 监听 load
-      loadEntry = this.cdp.on('Page.loadEventFired', () => {
+      loadEntry = this.cdp.onTarget('Page.loadEventFired', targetId, () => {
         if (navigated) done({ state: 'complete', navigated: true });
       });
 
       // 轮询保底
       const fallback = setInterval(async () => {
+        if (inFlight || resolved) return;
+        inFlight = true;
         try {
           const r = await this.cdp.sendToTarget(targetId, 'Runtime.evaluate', {
             expression: 'JSON.stringify({url:location.href,ready:document.readyState})',
@@ -106,6 +114,7 @@ export class SmartWaiter {
             done({ state: 'complete', url: state.url, navigated: true });
           }
         } catch { /* ignore during navigation */ }
+        finally { inFlight = false; }
       }, 600);
     });
   }
@@ -130,10 +139,10 @@ export class SmartWaiter {
         clearTimeout(timer);
         clearInterval(check);
         // 清理所有事件监听
-        if (reqEntry) this.cdp.off('Network.requestWillBeSent', reqEntry);
-        if (finEntry) this.cdp.off('Network.loadingFinished', finEntry);
-        if (failEntry) this.cdp.off('Network.loadingFailed', failEntry);
-        if (respEntry) this.cdp.off('Network.responseReceived', respEntry);
+        if (reqEntry) this.cdp.offTarget('Network.requestWillBeSent', targetId, reqEntry);
+        if (finEntry) this.cdp.offTarget('Network.loadingFinished', targetId, finEntry);
+        if (failEntry) this.cdp.offTarget('Network.loadingFailed', targetId, failEntry);
+        if (respEntry) this.cdp.offTarget('Network.responseReceived', targetId, respEntry);
         resolve({ ...result, elapsed: Date.now() - start });
       };
 
@@ -149,15 +158,15 @@ export class SmartWaiter {
         if (activeRequests.size <= maxPending) lastActivity = Date.now();
       };
 
-      reqEntry = this.cdp.on('Network.requestWillBeSent', (params) => {
+      reqEntry = this.cdp.onTarget('Network.requestWillBeSent', targetId, (params) => {
         if (!shouldIgnore(params.request?.url || '')) {
           activeRequests.add(params.requestId);
           lastActivity = Date.now();
         }
       });
-      finEntry = this.cdp.on('Network.loadingFinished', doneHandler);
-      failEntry = this.cdp.on('Network.loadingFailed', doneHandler);
-      respEntry = this.cdp.on('Network.responseReceived', (params) => {
+      finEntry = this.cdp.onTarget('Network.loadingFinished', targetId, doneHandler);
+      failEntry = this.cdp.onTarget('Network.loadingFailed', targetId, doneHandler);
+      respEntry = this.cdp.onTarget('Network.responseReceived', targetId, (params) => {
         if (params.response?.status >= 300) activeRequests.delete(params.requestId);
       });
 
@@ -291,23 +300,44 @@ export class SmartWaiter {
       expression: 'location.href', returnByValue: true,
     });
     const startUrl = currentResp.result?.result?.value || '';
+    const urlRe = urlPattern ? new RegExp(urlPattern, 'i') : null;
 
     return new Promise((resolve) => {
       let resolved = false;
-      const done = (r) => { if (resolved) return; resolved = true; clearTimeout(t); clearInterval(c); resolve(r); };
+      let inFlight = false;
+      let navEntry, spaEntry;
+      const done = (r) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(t);
+        clearInterval(c);
+        if (navEntry) this.cdp.offTarget('Page.frameNavigated', targetId, navEntry);
+        if (spaEntry) this.cdp.offTarget('Page.navigatedWithinDocument', targetId, spaEntry);
+        resolve(r);
+      };
+      const checkUrl = (url) => {
+        if (url && url !== startUrl && (!urlRe || urlRe.test(url))) {
+          done({ changed: true, from: startUrl, to: url, elapsed: Date.now() - start });
+        }
+      };
       const t = setTimeout(() => done({ changed: false, elapsed: Date.now() - start }), timeoutMs);
+      navEntry = this.cdp.onTarget('Page.frameNavigated', targetId, (params) => {
+        if (params.frame?.parentId) return;
+        checkUrl(params.frame?.url);
+      });
+      spaEntry = this.cdp.onTarget('Page.navigatedWithinDocument', targetId, (params) => {
+        checkUrl(params.url);
+      });
       const c = setInterval(async () => {
+        if (inFlight || resolved) return;
+        inFlight = true;
         try {
           const r = await this.cdp.sendToTarget(targetId, 'Runtime.evaluate', {
             expression: 'location.href', returnByValue: true,
           });
-          const url = r.result?.result?.value;
-          if (url && url !== startUrl) {
-            if (!urlPattern || new RegExp(urlPattern, 'i').test(url)) {
-              done({ changed: true, from: startUrl, to: url, elapsed: Date.now() - start });
-            }
-          }
+          checkUrl(r.result?.result?.value);
         } catch {}
+        finally { inFlight = false; }
       }, 300);
     });
   }

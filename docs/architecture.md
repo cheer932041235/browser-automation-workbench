@@ -1,129 +1,101 @@
 # Architecture
 
-Browser Automation Workbench uses a two-layer architecture.
+Browser Automation Workbench uses a layered local-first architecture tailored for both managed cross-project sessions and direct daily-browser automation.
 
 ```text
-User / Agent
+User / Codex / Project CLI
    │
-   ├── Browser Intelligence CLI
-   │      ├── record: capture a human browsing session
-   │      ├── review: analyze traces and recommend automation strategy
-   │      ├── extract: extract structured content from traces
-   │      └── api discovery: turn frontend actions into backend integration evidence
+   ├── Managed Workbench (:3460 + stdio MCP)
+   │      ├── SessionManager (runtime/sessions.json, project-local profiles & idle sleep)
+   │      ├── WorkflowRunner & TaskManager (runtime/tasks/*.json, resumable steps)
+   │      ├── Compact Management UI (packages/browser-engine/web)
+   │      └── Backends:
+   │            ├── Desktop Shell (packages/browser-desktop: Electron WebContentsView)
+   │            ├── Managed Native Chrome/Edge (isolated local profile)
+   │            └── Scoped Attached Daily Chrome/Edge
    │
-   └── Browser Engine HTTP API
-          ├── CDP connection
-          ├── tab lifecycle
-          ├── interaction primitives
-          ├── page analysis
-          ├── network observation
-          └── task/session utilities
-
-Real Edge / Chrome Browser
+   └── Browser Intelligence (:3456 Engine + CLI)
+          ├── Browser Intelligence CLI (record → review → extract / API discovery)
+          └── Browser Engine HTTP API & CLI (be.mjs, :3456)
+                 └── Direct DevToolsActivePort → Daily Edge / Chrome
 ```
 
-## Layer 1: Browser Engine
+## Layer 1: Desktop Shell (`packages/browser-desktop`)
 
-Browser Engine is the execution layer. It connects to the user's daily Edge/Chrome instance through Chrome DevTools Protocol (CDP). It exposes browser capabilities as a local HTTP API.
+The standalone Electron `WebContentsView` shell (`我的浏览器`) provides isolated, window-controlled Chromium views without touching the user's daily Edge/Chrome profiles:
 
-Responsibilities:
+- Hidden-by-default execution with `show_human` / `resume_background` transitions
+- Native window framing, tab strip, URL bar, navigation buttons, and right-aligned "return to background" action
+- Active-tab unthrottled / inactive-tab background throttling (`setBackgroundThrottling`)
+- Synchronized tab cleanup on external CDP closes, `will-prevent-unload` guard, 12s bounded `loadURL`, and hidden-view offscreen capture (`/capture`) for `browser_page_screenshot` and `browser_page_check`
+- Remote pages remain sandboxed with `contextIsolation: true` and receive zero Node/workbench bridges
 
-- Discover and connect to the browser debugging port
-- Manage tabs and browser targets
-- Execute JavaScript in pages and frames
-- Perform UI interactions such as click, type, scroll, upload, drag, and shortcut keys
-- Extract page text, links, forms, tables, screenshots, and PDF output
-- Observe network requests and fetch response bodies
-- Manage cookies, localStorage, sessionStorage, and downloads
-- Persist task state for multi-step workflows
+## Layer 2: Browser Engine & Managed Workbench (`packages/browser-engine`)
 
-Non-responsibilities:
+Browser Engine runs both the direct daily-browser CDP execution server (`:3456`) and the managed session workbench (`:3460` + stdio MCP):
 
-- It does not decide what content is important
-- It does not own domain-specific extraction logic
-- It does not bypass account security, CAPTCHA, or platform risk controls
+### Direct CDP Execution Server (`server.mjs`, `:3456`)
 
-## Layer 2: Browser Intelligence
+- Discovers and attaches to the user's daily Edge/Chrome via `DevToolsActivePort` (`npm run engine:check` / `POST /reconnect`)
+- Manages tabs, frames, Shadow DOM, UI interactions, waiting primitives, dialog auto-handling, accessibility snapshots, and scripted pipelines
+- Isolates console logging, network observation, navigation tracking, and wait listeners by `targetId` (non-destructive `offTarget` teardown)
+- Extracts page text, structured elements, forms (redacting password/OTP fields), links, tables, screenshots (`work/screenshots/`), and PDFs
+- Includes `DemoRecorder` (`demo-recorder.mjs`) for screencast + FFmpeg viewport recordings
 
-Browser Intelligence is the workflow and analysis layer. It uses Browser Engine as the execution backend and turns browsing sessions into durable artifacts.
+### Managed Workbench (`workbench.mjs`, `:3460` & `workbench-client.mjs --mcp`)
 
-Responsibilities:
+- Owns `SessionManager` (`runtime/sessions.json`, per-session `idleTimeoutMinutes` hibernation, real-time `includeMetrics` tab count & RSS memory sampling, dead-PID reconciliation)
+- Owns `WorkflowRunner` + `TaskManager` (`runtime/tasks/*.json`) with pre-step ownership verification, postcondition checks (`check`), sensitive fill redaction (`sensitive: true` + runtime `values`), explicit `browser_task_rebind`, and local SSE completion events (`GET /events`)
+- Exposes high-level inspection tools (`browser_page_check` at `1440px`/`390px` viewports, `browser_page_screenshot`, `browser_frames`, `browser_frame_read`, `browser_downloads`)
 
-- Record a browsing task into trace files
-- Capture page text, network metadata, screenshots, navigation history, and notes
-- Review traces to identify API candidates, stable selectors, and automation strategy
-- Explain whether a frontend click path should become API-first, UI-first, or hybrid secondary development
-- Extract structured content from saved traces
-- Produce human-readable reports and machine-readable JSON
+Non-responsibilities of Layer 2:
 
-Non-responsibilities:
+- Does not decide business relevance of page content
+- Does not bypass CAPTCHA, account security, or anti-bot controls
 
-- It is not a general crawler
-- It is not designed for unattended monitoring
-- It does not own low-level CDP protocol implementation
+## Layer 3: Browser Intelligence (`packages/browser-intelligence`)
 
-## Data Flow
+Browser Intelligence uses `:3456` Browser Engine as the execution backend and turns manual browsing sessions into durable analysis artifacts:
+
+- Capture page text, DOM hints, screenshots, navigation history, and network metadata (`record`)
+- Classify requests, locate stable selectors, identify API candidates, and recommend API-first / UI-first / hybrid automation strategies (`review`)
+- Extract structured post/content datasets from traces (`extract`)
+
+Non-responsibilities of Layer 3:
+
+- Not an unattended high-frequency crawler
+- Does not own low-level CDP session or desktop shell management
+
+## Data Flow & Storage Layout
+
+### Intelligence Trace Flow
 
 ```text
-record start
-  → Browser Engine opens/attaches tab
-  → network monitor + navigation tracker + autoshot enabled
-  → user browses normally
-  → record mark adds semantic notes
-  → record stop captures final page state
-
-review
-  → reads trace.jsonl + pages.json + network.json
-  → classifies requests
-  → identifies API candidates and selectors
-  → writes review.md
-
-secondary development
-  → validates candidate backend interfaces
-  → confirms parameters, auth context, response schema, and error handling
-  → wraps stable behavior into an adapter, CLI, extractor, site profile, or pipeline
-
-extract
-  → reads pages.json + network.json
-  → detects platform
-  → parses text/network data
-  → enriches posts/items
-  → writes posts.json + extract.md
+record start → open/attach tab → network monitor + nav tracker + autoshot
+  → user browses & marks steps → record stop (automatically disables monitors)
+  → review (reads trace.jsonl + pages.json + network.json → review.md)
+  → secondary development (API adapter / site profile / pipeline) or extract (posts.json + extract.md)
 ```
 
-## Runtime Output
-
-Runtime output is intentionally kept outside package source files:
+### Runtime & Artifact Directories (All Git-Ignored)
 
 ```text
-logs/browser-intelligence/traces/<taskId>/
-├── trace.jsonl
-├── notes.md
-├── pages.json
-├── network.json
-├── summary.md
-├── review.md
-├── posts.json
-├── extract.md
-└── screenshots/
+runtime/                        # Persistent managed workbench state (local)
+├── desktop-runtime/            # Unpacked official Electron runtime
+├── sessions.json               # Session registry
+├── profiles/<sessionId>/       # Isolated browser profile & site storage
+├── downloads/<sessionId>/      # Session download directory
+├── temp/<sessionId>/           # Launch/temp data
+├── tasks/<taskId>.json         # Resumable workflow task records
+└── logs/workbench.log          # Managed workbench service log
+
+work/                           # Ephemeral scratch, previews & default screenshots (clean after task)
+outputs/                        # Formal acceptance reports & result JSONs
+logs/browser-intelligence/      # Recorded traces (trace.jsonl, network.json, review.md, extract.md)
 ```
-
-`logs/` is ignored by Git.
-
-## Extension Points
-
-Future browser automation features should usually fit into one of these extension points:
-
-- **Engine endpoint**: add a new browser primitive or CDP capability
-- **Site profile**: add reusable site-specific selectors and known patterns
-- **Recorder event**: capture a new type of trace evidence
-- **Reviewer analyzer**: add a new heuristic for API/selector/workflow analysis
-- **Extractor parser**: add a new platform/content parser
-- **Task template**: add reusable workflow instructions for a recurring use case
-- **Backend/API adapter**: wrap a repeatedly validated browser-discovered interface
 
 ## Design Principle
 
-Do not prematurely make every site a product feature. First record and analyze real browsing sessions. Promote repeated patterns into profiles, extractors, or engine endpoints only after they prove useful.
-
-The recorded UI path is often only the first layer. Its deeper value is to reveal the backend interfaces and browser state behind the visible page, so later development can replace brittle click replay with safer API or hybrid integrations when appropriate.
+- **Pick the right channel**: Use `:3460` + `engine=desktop` for isolated multi-project workflows and MCP tools; use `:3456` + `bi` for direct daily-browser exploration and API discovery.
+- **Promote patterns incrementally**: Record and inspect real sessions first; promote repeated workflows into site profiles, pipelines, extractors, or backend API adapters only after stability is verified.
+- **Keep project roots clean**: Persistent profiles live in `runtime/`, acceptance records in `outputs/`, and transient screenshots/previews in `work/` so nothing leaks into source directories or Git.

@@ -1,162 +1,43 @@
 # Workflows
 
-This document describes common workflows for Browser Automation Workbench.
+## Isolated project browsing
 
-## Workflow 1: One-off Page Operation
+Follow the CLI example in the [README](../README.md#cli给指定项目创建会话). Start a session, open the intended URL, list pages and use the returned pageId. Request human handoff when the site needs login or verification.
 
-Use Browser Engine directly.
+## Resumable form task
 
-```bash
-npm run engine:start
-npm run engine:cli -- new https://example.com
-npm run engine:cli -- tabs
-npm run engine:cli -- text <targetId>
-npm run engine:cli -- shot <targetId> screenshots/example.png
-npm run engine:cli -- close <targetId>
+After opening a local or authorized application page, send this plan to browser_task_create, replacing the absolute project path, exact URL, page ID and selectors with observed values:
+
+```json
+{
+  "id":"form-demo",
+  "sessionId":"demo",
+  "project":"/absolute/path/to/project",
+  "pageId":"<observed-page-id>",
+  "url":"https://app.example.org/form",
+  "steps":[
+    {"id":"fill-title","action":"fill","selector":"#title","value":"Example"},
+    {"id":"save","action":"click","selector":"#save","check":{"selector":"#status","text":"Saved"}}
+  ]
+}
 ```
 
-Best for:
+Run with browser_task_run:{taskId:"form-demo"}. Read saved state with browser_task_get. Following an interruption, observe the page and postcondition before resolving the existing step; do not create a replacement plan that repeats completed submissions.
 
-- Quick page inspection
-- Screenshot capture
-- Small form operations
-- Debugging a selector
+## Screenshot and responsive check
 
-## Workflow 2: Human-in-the-loop Browsing Record
+browser_page_screenshot requires an explicit absolute filePath. browser_page_check accepts widths, height and optional screenshotDir. Review the actual image when visual correctness matters; a returned file path alone is not a visual check.
 
-Use Browser Intelligence Recorder.
+## Record, review, extract
 
-```bash
-npm run bi -- record start research-demo --url https://example.com
-npm run bi -- record mark "Found target page"
-npm run bi -- record mark "Clicked useful section"
+```powershell
+npm run engine:check
+npm run engine:start -- --browser edge
+npm run bi -- record start demo-task --url https://example.org/
+npm run bi -- record mark "Page inspected"
 npm run bi -- record stop
-npm run bi -- review research-demo
+npm run bi -- review demo-task
+npm run bi -- extract demo-task
 ```
 
-Best for:
-
-- Browsing tasks that require judgment
-- Sites with login state
-- Exploratory research
-- Turning manual browsing into reusable evidence
-
-## Workflow 3: Record → Review → Extract
-
-```bash
-npm run bi -- record start content-demo --url https://example.com
-# browse normally
-npm run bi -- record stop
-npm run bi -- review content-demo
-npm run bi -- extract content-demo
-```
-
-Best for:
-
-- Content-heavy pages
-- Feeds and search pages
-- Pages where structured output is useful
-- Building a future extractor
-
-## Workflow 4: Build a New Site Profile
-
-1. Open the target site with Browser Engine.
-2. Use `/page/elements`, `/page/forms`, `/page/links`, and screenshots to inspect structure.
-3. Use manual browsing plus `record mark` to capture important state transitions.
-4. Run `review` to identify stable selectors and API endpoints.
-5. Promote stable findings into a site profile only after repeated use.
-
-Recommended evidence:
-
-- Page URL patterns
-- Stable text anchors
-- Stable selectors
-- API endpoint patterns
-- Required wait conditions
-- Login/permission boundaries
-- Known popups or dialogs
-
-## Workflow 5: API-first Automation Discovery
-
-This is the workflow that turns a visible frontend operation into backend/API development evidence.
-
-The browser click path is not the final product. It is a controlled probe:
-
-```text
-click/search/navigate in browser
-  → capture network requests and page state
-  → identify candidate backend interfaces
-  → validate and wrap the stable interface in secondary development
-```
-
-1. Start recording.
-2. Enable network monitoring through Recorder or Engine.
-3. Perform the user action once manually.
-4. Stop recording.
-5. Run `review`.
-6. Check API candidates in `review.md` and `network.json`.
-7. If API response body is required, use Engine's `/network/response` while the target page is still alive.
-
-Use API-first only when it is stable, authenticated by existing browser session, and safer than brittle UI clicks.
-
-The output of this workflow is usually not a finished automation feature. It is a development brief for the next layer:
-
-- Confirm the request method, URL, parameters, headers, and response schema.
-- Decide how authentication should be handled without exposing credentials.
-- Implement a backend adapter, CLI script, extractor, site profile, or Browser Engine pipeline.
-- Add tests with synthetic fixtures before treating the integration as reusable.
-
-## Workflow 6: UI-first Automation
-
-Use UI-first when:
-
-- API is unavailable or heavily obfuscated
-- The page requires user gestures
-- The workflow is short
-- Human judgment remains in the loop
-
-Typical sequence:
-
-```text
-new tab → wait for page → detect obstacle → click/search/type → wait network/text → extract text/screenshot
-```
-
-## Workflow 7: Hybrid Automation
-
-Use hybrid when:
-
-- UI is needed to reach a valid page state
-- API calls become visible after user interaction
-- Content is partly rendered and partly delivered through network responses
-- The user must first perform judgment or confirmation, then developers can wrap the discovered interface
-
-Typical sequence:
-
-```text
-UI navigate/search → network monitor → response extraction → page text fallback
-```
-
-## Workflow 8: Content Intelligence Session
-
-This is the preferred pattern for research and knowledge work.
-
-```text
-User browses normally
-  → Recorder captures trace
-  → User marks important moments
-  → Reviewer summarizes what happened
-  → Extractor produces structured content
-  → User decides what to keep
-```
-
-This avoids the false goal of fully unattended crawling and preserves the value of human judgment.
-
-## Anti-patterns
-
-Avoid these unless there is a strong reason:
-
-- Polling social feeds every few minutes
-- Trying to bypass CAPTCHA or account security
-- Running browser automation unattended for long periods
-- Adding site-specific features after only one example
-- Treating screenshots as the only source of truth when DOM/network data is available
+Recorded page and network artifacts stay under logs/browser-intelligence/. Use a site and account you are authorized to inspect. The resulting API brief is development evidence, not permission to publish captured credentials or user data.

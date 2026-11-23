@@ -1,0 +1,10 @@
+:root{font:13px 'Segoe UI','Microsoft YaHei',sans-serif;color:#183c36;background:#f3f6f5}*{box-sizing:border-box}body{margin:0}header{height:42px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#234f48;color:white;-webkit-app-region:drag}.brand{display:flex;align-items:center;gap:9px}.brand span{opacity:.8;font-size:12px}.window-actions{display:flex;gap:2px;-webkit-app-region:no-drag}button{font:inherit;cursor:pointer;border:0;border-radius:5px;background:transparent;color:inherit;padding:6px 11px}button:hover{background:#ffffff24}#background{font-size:12px;background:#ffffff18;margin-right:12px}#hide:hover{background:#b44b43}nav{height:34px;display:flex;gap:4px;padding:4px 12px 0;background:#dfebe7;overflow:auto}nav button{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#2c5148;padding:5px 12px}nav button.active{background:#f3f6f5}.tab-close{margin-left:6px;padding:0 4px;border-radius:3px;opacity:.65}.tab-close:hover{opacity:1;background:#00000018}form{height:42px;display:flex;align-items:center;gap:5px;padding:4px 12px;border-bottom:1px solid #c8d8d2}form button:hover{background:#e1eae5}input{flex:1;min-width:100px;font:inherit;border:1px solid #c7d7d0;background:white;border-radius:7px;padding:6px 12px;color:#243f38}input:focus{outline:2px solid #71998a}#error{color:#953f36;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.hub-mode #background,body.hub-mode form#navigate{display:none}
+body.hub-mode nav{align-items:center;border-bottom:1px solid #c8d8d2;padding:3px 10px 0}
+body.hub-mode nav button{display:inline-flex;align-items:center}
+body.hub-mode nav button.unloaded{opacity:.78}
+.slot-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;background:#9ab5a8}
+button.loaded .slot-dot{background:#2ecc71}
+.hub-nav-tools{margin-left:auto;display:flex;gap:2px;padding-bottom:3px}
+.hub-nav-tools button{color:#2c5148;padding:3px 8px;border-radius:5px}
+.hub-nav-tools button:hover{background:#cddcd6}
